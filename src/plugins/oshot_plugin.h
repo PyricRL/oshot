@@ -16,8 +16,8 @@ extern "C" {
 typedef enum
 {
     OSHOT_CAP_NONE    = 0,
-    OSHOT_CAP_NETWORK = 1u << 0,
-    OSHOT_CAP_FS      = 1u << 1,
+    OSHOT_CAP_NETWORK = 1 << 0,
+    OSHOT_CAP_FS      = 1 << 1,
 } OSCapabilities;
 
 typedef enum
@@ -61,20 +61,29 @@ typedef struct
     };
 } oshot_value_t;
 
+typedef struct
+{
+    oshot_str_t text;
+    int32_t     confidence;  // 0-100, or -1 if unavailable
+    int32_t     psm;         // tesseract::PageSegMode value
+} oshot_ocr_result_t;
+
 /* ------------------------------------------------------------------
  * Plugin descriptor.
  * One per plugin, returned by the single exported symbol below
  * ---------------------------------------------------------------- */
 typedef struct
 {
-    uint32_t    abi_version;
-    const char* name;
-    uint32_t    capabilities; /* OR of oshot_capabilities_t, informational only */
+    uint32_t abi_version;
+
+    const char* name;          // display name, doesn't need to be unique
+    const char* id;            // reverse-domain, e.g. "com.example.myplugin"
+    uint32_t    capabilities;  // OR of oshot_capabilities_t, informational only
 
     void* (*init)(void);
     void (*destroy)(void* state);
     void (*render)(void* state);
-    void (*on_ocr_done)(void* state);
+    void (*on_ocr_done)(void* state, const oshot_ocr_result_t* result);
 } oshot_plugin_t;
 
 /* ------------------------------------------------------------------

@@ -5,21 +5,16 @@
 #include "fmt/chrono.h"
 #include "fmt/format.h"
 #include "oshot_plugin.h"
+#include "plugin.hpp"
 #include "screenshot_tool.hpp"
 #include "util.hpp"
-
-struct oshot_host_api_t
-{
-    uint32_t       abi_version = OSHOT_API_VERSION;
-    oshot_plugin_t plugin      = { "test" };
-} g_api;
 
 /* ------------------------------------------------------------------
  * ABI / identity
  * ------------------------------------------------------------------ */
 uint32_t oshot_get_abi_version()
 {
-    return g_api.abi_version;
+    return OSHOT_API_VERSION;
 }
 
 /* ------------------------------------------------------------------
@@ -45,9 +40,9 @@ void oshot_str_free(oshot_str_t* str)
 /* ------------------------------------------------------------------
  * Logging / host messaging
  * ------------------------------------------------------------------ */
-void oshot_display_msg(const OSLogLevel lvl, const oshot_str_t str)
+void oshot_display_msg(const OSLogLevel lvl, oshot_str_t str)
 {
-    const std::string& out = fmt::format("{}: {}", g_api.plugin.name, std::string_view(str.p, str.len));
+    const std::string& out = fmt::format("{}: {}", g_current_plugin->plugin->id, std::string_view(str.p, str.len));
     switch (lvl)
     {
         case OSLogLevel::OSHOT_LOG_DEBUG:
@@ -63,7 +58,8 @@ void oshot_log(OSLogLevel lvl, oshot_str_t str)
 {
     auto now = std::chrono::system_clock::now();
 
-    const std::string& out = fmt::format("[{}] {}: {}", now, g_api.plugin.name, std::string_view(str.p, str.len));
+    const std::string& out =
+        fmt::format("[{}] {}: {}", now, g_current_plugin->plugin->id, std::string_view(str.p, str.len));
     switch (lvl)
     {
         case OSLogLevel::OSHOT_LOG_DEBUG: spdlog::debug("{}", out); break;
@@ -104,43 +100,43 @@ void oshot_debug_s(const char* str)
  * ------------------------------------------------------------------ */
 oshot_str_t oshot_config_get_string(const char* key, oshot_str_t fallback)
 {
-    const std::string& str = g_config->GetValue<std::string>(fmt::format("plugins.{}.{}", g_api.plugin.name, key),
-                                                             std::string(fallback.p, fallback.len));
+    const std::string& str =
+        g_config->GetValue<std::string>(g_current_plugin->config_prefix + key, std::string(fallback.p, fallback.len));
     return oshot_str_new(str.c_str(), str.length());
 }
 
 bool oshot_config_get_bool(const char* key, bool fallback)
 {
-    bool val = g_config->GetValue<bool>(fmt::format("plugins.{}.{}", g_api.plugin.name, key), fallback);
+    bool val = g_config->GetValue<bool>(g_current_plugin->config_prefix + key, fallback);
     return val;
 }
 
 int64_t oshot_config_get_int64(const char* key, int64_t fallback)
 {
-    int64_t val = g_config->GetValue<int64_t>(fmt::format("plugins.{}.{}", g_api.plugin.name, key), fallback);
+    int64_t val = g_config->GetValue<int64_t>(g_current_plugin->config_prefix + key, fallback);
     return val;
 }
 
 float oshot_config_get_float(const char* key, float fallback)
 {
-    float val = g_config->GetValue<float>(fmt::format("plugins.{}.{}", g_api.plugin.name, key), fallback);
+    float val = g_config->GetValue<float>(g_current_plugin->config_prefix + key, fallback);
     return val;
 }
 
 double oshot_config_get_double(const char* key, double fallback)
 {
-    double val = g_config->GetValue<double>(fmt::format("plugins.{}.{}", g_api.plugin.name, key), fallback);
+    double val = g_config->GetValue<double>(g_current_plugin->config_prefix + key, fallback);
     return val;
 }
 
 size_t oshot_config_get_array(const char* key, oshot_value_t** out, size_t max)
 {
-    const toml::array* arr = g_config->GetValueArray(fmt::format("plugins.{}.{}", g_api.plugin.name, key));
+    const toml::array* arr = g_config->GetValueArray(g_current_plugin->config_prefix + key);
     if (!arr)
         return 0;
 
     size_t i = 0;
-    for (auto&& el : *arr)
+    for (const toml::node& el : *arr)
     {
         if (i == max)
             break;

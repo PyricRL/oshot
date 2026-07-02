@@ -13,8 +13,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include "../src/plugins/oshot_plugin.h"
-#include "dylib.hpp"
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
 #include "screen_capture.hpp"
@@ -108,13 +106,6 @@ enum class GeneralError : size_t
 {
     FailedToCopyText,
     COUNT,
-};
-
-struct plugin_entry_t
-{
-    dylib::library  lib;
-    oshot_plugin_t* plugin;
-    void*           state;
 };
 
 struct point_t
@@ -358,8 +349,7 @@ private:
     }
 };
 
-extern ScreenshotTool              g_ss_tool;
-extern std::deque<std::string>     g_dropped_paths;
-extern std::vector<plugin_entry_t> g_plugin_entries;
+extern ScreenshotTool          g_ss_tool;
+extern std::deque<std::string> g_dropped_paths;
 
 #endif  // !_SCREENSHOT_TOOL_HPP_

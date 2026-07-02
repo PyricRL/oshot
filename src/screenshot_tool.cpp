@@ -28,6 +28,7 @@
 #include "imgui/imgui_impl_opengl3_loader.h"
 #include "imgui/imgui_internal.h"
 #include "imgui/imgui_stdlib.h"
+#include "plugin.hpp"
 #include "plugins/oshot_plugin.h"
 #include "screen_capture.hpp"
 #include "tiny-process-library/process.hpp"
@@ -266,7 +267,8 @@ static void load_plugins()
         if (!plugin_dir.is_directory())
             continue;
 
-        const std::string expected = "lib" + plugin_dir.path().filename().string() + dylib::decorations::os_default().suffix;
+        const std::string expected =
+            "lib" + plugin_dir.path().filename().string() + dylib::decorations::os_default().suffix;
 
         for (const auto& entry :
              fs::directory_iterator(plugin_dir.path(), fs::directory_options::skip_permission_denied))
@@ -280,24 +282,53 @@ static void load_plugins()
                 auto            oshot_get_plugin = lib.get_function<oshot_plugin_t*(void)>("oshot_host_get_plugin");
                 oshot_plugin_t* plugin           = oshot_get_plugin();
 
-                if (!plugin || plugin->abi_version != OSHOT_API_VERSION)
+                if (!plugin || plugin->abi_version != oshot_get_abi_version())
                 {
                     error("Plugin '{}' has incompatible ABI version, skipping", entry.path().stem().string());
                     continue;
                 }
 
-                if (!plugin->init)
-                    continue;
-
-                void* state = plugin->init();
-                if (!state)
+                if (!plugin->render || !plugin->id || !plugin->name || plugin->name[0] == '\0')
                 {
-                    error("Failed to init plugin '{}'", entry.path().stem().string());
+                    error("Plugin '{}' doesn't define name/ID or render function", entry.path().stem().string());
                     continue;
                 }
 
-                g_plugin_entries.emplace_back(
-                    plugin_entry_t{ .lib = std::move(lib), .plugin = plugin, .state = state });
+                if (plugin->id[0] == '.' ||
+                    !std::ranges::all_of(std::string_view(plugin->id), [](const unsigned char c) {
+                        return (isalnum(c) || c == '-' || c == '_' || c == '=' || c == '.');
+                    }))
+                {
+                    error("Plugin '{}' has an invalid ID", plugin->id);
+                    continue;
+                }
+
+                if (!std::ranges::all_of(std::string_view(plugin->name), [](const unsigned char c) {
+                        return (isalnum(c) || c == '-' || c == '_' || c == '=' || c == ' ');
+                    }))
+                {
+                    error("Plugin '{}' contains chars other than -_= or alpha numerical", plugin->id);
+                    continue;
+                }
+
+                auto [it, inserted] = g_plugins.try_emplace(plugin->id,
+                                                            plugin->id,
+                                                            fmt::format("plugins.{}.", plugin->id),
+                                                            get_config_dir() / "plugins" / plugin->id,
+                                                            plugin,
+                                                            nullptr,  // state filled in below
+                                                            std::move(lib));
+                if (!inserted)
+                {
+                    error("Duplicate plugin '{}'", plugin->id);
+                    continue;
+                }
+
+                if (plugin->init)
+                {
+                    ScopedActivePlugin _(&it->second);
+                    it->second.state = plugin->init();
+                }
 
                 spdlog::info("loading plugin at {}!", entry.path().string());
             }
@@ -525,19 +556,20 @@ void ScreenshotTool::RenderOverlay()
         DrawDownloadOCRWindow();
         DrawOcrTools();
         DrawBarDecodeTools();
-        for (plugin_entry_t& entry : g_plugin_entries)
+        for (auto& [_, entry] : g_plugins)
         {
             oshot_plugin_t* plugin = entry.plugin;
-            if (!plugin->render || !plugin->name || plugin->name[0] == '\0')
+            if (!plugin->render || !plugin->id || !plugin->name || plugin->name[0] == '\0')
                 continue;
 
             if (ImGui::CollapsingHeader(plugin->name))
             {
-                ImGui::PushID(plugin->name);
+                ImGui::PushID(plugin->id);
 
-                ImVec2 child_size(0.0f, 0.0f);  // auto-height, or let plugins set a preferred height
-                ImGui::BeginChild(plugin->name, child_size, ImGuiChildFlags_Borders);
+                // auto-height, or let plugins set a preferred height
+                ImGui::BeginChild(plugin->name, ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders);
 
+                ScopedActivePlugin _(&entry);
                 plugin->render(entry.state);
 
                 ImGui::EndChild();
@@ -1439,9 +1471,23 @@ void ScreenshotTool::DrawOcrTools()
                 {
                     ClearError(ectx, OcrError::FailedToScan);
                     m_inputs.ocr_results = std::move(result.get());
-                    for (plugin_entry_t& entry : g_plugin_entries)
-                        if (entry.plugin->on_ocr_done)
-                            entry.plugin->on_ocr_done(entry.state);
+                    if (!g_plugins.empty())
+                    {
+                        oshot_ocr_result_t ocr{
+                            .text =
+                                oshot_str_new(m_inputs.ocr_results.data.c_str(), m_inputs.ocr_results.data.length()),
+                            .confidence = m_inputs.ocr_results.confidence,
+                            .psm        = m_inputs.ocr_results.psm,
+                        };
+                        for (auto& [id, rt] : g_plugins)
+                        {
+                            if (!rt.plugin->on_ocr_done)
+                                continue;
+                            ScopedActivePlugin _(&rt);
+                            rt.plugin->on_ocr_done(rt.state, &ocr);
+                        }
+                        oshot_str_free(&ocr.text);
+                    }
                 }
                 else
                 {

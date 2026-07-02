@@ -80,6 +80,23 @@ enum class PrefTab
     Theme
 };
 
+enum class SubWindow
+{
+    OcrDownload,
+    About,
+    Preferences,
+    MainTextTools,
+    COUNT
+};
+
+enum class CurrentAction
+{
+    IsDrawing,
+    IsColorPicking,
+    IsTextPlacing,
+    COUNT
+};
+
 enum class OcrDownloadError : size_t
 {
     InvalidRepo,
@@ -155,22 +172,13 @@ struct inputs_results_t
 };
 
 template <typename Enum>
-struct ErrorContext
+struct GeneralContext
 {
-    std::bitset<idx(Enum::COUNT)>             flags;
-    std::array<std::string, idx(Enum::COUNT)> texts;
+    std::bitset<idx(Enum::COUNT)> flags;
 
-    void Set(Enum e, std::string_view msg = {})
-    {
-        flags.set(idx(e));
-        texts[idx(e)] = msg;
-    }
+    void Set(Enum e, bool flag = true) { flags.set(idx(e), flag); }
 
-    void Clear(Enum e)
-    {
-        flags.reset(idx(e));
-        texts[idx(e)].clear();
-    }
+    void Clear(Enum e) { flags.reset(idx(e)); }
 
     bool Has(Enum e) const { return flags.test(idx(e)); }
 
@@ -178,6 +186,24 @@ struct ErrorContext
     bool HasAny(E... e) const
     {
         return (Has(e) || ...);
+    }
+};
+
+template <typename Enum>
+struct ErrorContext : public GeneralContext<Enum>
+{
+    std::array<std::string, idx(Enum::COUNT)> texts;
+
+    void Set(Enum e, std::string_view msg = {})
+    {
+        GeneralContext<Enum>::Set(e);
+        texts[idx(e)] = msg;
+    }
+
+    void Clear(Enum e)
+    {
+        GeneralContext<Enum>::Clear(e);
+        texts[idx(e)].clear();
     }
 
     const std::string& Get(Enum e) const { return texts[idx(e)]; }
@@ -289,7 +315,6 @@ private:
     selection_rect_t m_drag_start_selection;
 
     inputs_results_t m_inputs;
-    bool             m_show_text_tools = true;
 
     ImVec2 m_drag_start_mouse;
     ImVec2 m_image_origin;
@@ -302,6 +327,8 @@ private:
     std::function<void(const capture_result_t&)>                   m_on_image_reload;
     std::function<void(SavingOp, const Result<capture_result_t>&)> m_on_complete;
 
+    GeneralContext<SubWindow>                      m_show_window;
+    GeneralContext<CurrentAction>                  m_current_actions;
     std::array<ImTextureRef, idx(ToolType::Count)> m_tool_textures{};
     ToolType                                       m_current_tool = ToolType::kNone;
     std::vector<annotation_t>                      m_annotations;
@@ -309,9 +336,6 @@ private:
     rgba_t                                         m_current_color;
     std::unordered_map<std::string, std::string*>  m_imgui_id_texts;
     std::array<float, idx(ToolType::Count)>        m_tool_thickness;
-    bool                                           m_is_drawing       = false;
-    bool                                           m_is_color_picking = false;
-    bool                                           m_is_text_placing  = false;
 
     void CreateCopyTextButton(const std::string& text);
     void RefreshOcrModels();

@@ -45,8 +45,6 @@ using namespace std::chrono_literals;
 static constexpr ImVec4 error_color(1.0f, 0.0f, 0.0f, 1.0f);
 static constexpr ImVec2 origin(0, 0);
 static ImTextureRef     logo_texture;
-static bool             show_preferences_window = false;
-static bool             show_toosl_window       = false;
 
 constexpr rgba_t::rgba_t(ImVec4 vec)
     : r(static_cast<uint8_t>(vec.x * 255.0f)),
@@ -449,7 +447,7 @@ Result<> ScreenshotTool::StartWindow()
 
     m_state = ToolState::Selecting;
 
-    m_show_text_tools = g_config->File.show_text_tools;
+    m_show_window.Set(SubWindow::MainTextTools, g_config->File.show_text_tools);
 
     fit_to_screen(m_screenshot);
     SyncRuntimeFromConfig();
@@ -497,7 +495,8 @@ Result<> ScreenshotTool::StartWindow()
 void ScreenshotTool::RenderOverlay()
 {
     const bool disable_esc =
-        (m_is_text_placing || m_is_color_picking || show_preferences_window || show_toosl_window) &&
+        (m_current_actions.Has(CurrentAction::IsTextPlacing) || m_current_actions.Has(CurrentAction::IsColorPicking) ||
+         m_show_window.Has(SubWindow::Preferences) || m_show_window.Has(SubWindow::OcrDownload)) &&
         !g_config->File.show_text_tools;
 
     static constexpr int minimal_win_flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
@@ -539,7 +538,7 @@ void ScreenshotTool::RenderOverlay()
     {
         DrawAnnotationToolbar();
 
-        if (m_is_color_picking)
+        if (m_current_actions.Has(CurrentAction::IsColorPicking))
             HandleColorPickerInput();
         else
             HandleAnnotationInput();
@@ -548,9 +547,10 @@ void ScreenshotTool::RenderOverlay()
     ImGui::End();
     ImGui::PopStyleVar();
 
-    if (m_state == ToolState::Selected && m_show_text_tools)
+    bool open = m_show_window.Has(SubWindow::MainTextTools);
+    if (m_state == ToolState::Selected && open)
     {
-        ImGui::Begin("Text tools", &m_show_text_tools, ImGuiWindowFlags_MenuBar);
+        ImGui::Begin("Text tools", &open, ImGuiWindowFlags_MenuBar);
         DrawMenuItems();
         DrawPreferencesWindow();
         DrawDownloadOCRWindow();
@@ -578,6 +578,7 @@ void ScreenshotTool::RenderOverlay()
         }
         ImGui::End();
     }
+    m_show_window.Set(SubWindow::MainTextTools, open);
 
     HandleShortcutsInput();
 
@@ -766,17 +767,18 @@ void ScreenshotTool::HandleAnnotationInput()
     // overwrite m_current_annotation (including start.x/y = 0) while
     // m_is_text_placing stays true, causing the input window to reappear at
     // position (0, 0) the next time Text is selected.
-    if (m_is_text_placing && m_current_tool != ToolType::Text)
+    if (m_current_actions.Has(CurrentAction::IsTextPlacing) && m_current_tool != ToolType::Text)
     {
         m_current_annotation = {};
-        m_is_text_placing    = false;
+        m_current_actions.Clear(CurrentAction::IsTextPlacing);
     }
 
     if (m_current_tool == ToolType::Text)
     {
-        if (!m_is_text_placing && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ui_blocks_selection())
+        if (!m_current_actions.Has(CurrentAction::IsTextPlacing) && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+            !ui_blocks_selection())
         {
-            m_is_text_placing              = true;
+            m_current_actions.Set(CurrentAction::IsTextPlacing);
             m_current_annotation.type      = ToolType::Text;
             m_current_annotation.start     = { mouse_pos.x, mouse_pos.y };
             m_current_annotation.end       = m_current_annotation.start;
@@ -785,7 +787,7 @@ void ScreenshotTool::HandleAnnotationInput()
             m_current_annotation.text.clear();
         }
 
-        if (m_is_text_placing)
+        if (m_current_actions.Has(CurrentAction::IsTextPlacing))
         {
             const float padding_y =
                 std::max(2.0f, (m_current_annotation.thickness - ImGui::GetTextLineHeight()) * 0.5f);
@@ -823,7 +825,7 @@ void ScreenshotTool::HandleAnnotationInput()
                     m_annotations.push_back(m_current_annotation);
                 }
                 m_current_annotation = {};
-                m_is_text_placing    = false;
+                m_current_actions.Clear(CurrentAction::IsTextPlacing);
             }
             ImGui::PopFont();
 
@@ -834,7 +836,7 @@ void ScreenshotTool::HandleAnnotationInput()
             if (ImGui::IsKeyPressed(ImGuiKey_Escape))
             {
                 m_current_annotation = {};
-                m_is_text_placing    = false;
+                m_current_actions.Clear(CurrentAction::IsTextPlacing);
             }
 
             ImGui::End();
@@ -847,7 +849,7 @@ void ScreenshotTool::HandleAnnotationInput()
 
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ui_blocks_selection())
     {
-        m_is_drawing                   = true;
+        m_current_actions.Set(CurrentAction::IsDrawing);
         m_current_annotation.type      = m_current_tool;
         m_current_annotation.start     = { mouse_pos.x, mouse_pos.y };
         m_current_annotation.end       = m_current_annotation.start;
@@ -869,7 +871,7 @@ void ScreenshotTool::HandleAnnotationInput()
         }
     }
 
-    if (m_is_drawing && ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    if (m_current_actions.Has(CurrentAction::IsDrawing) && ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
         m_current_annotation.end = { mouse_pos.x, mouse_pos.y };
 
@@ -887,9 +889,9 @@ void ScreenshotTool::HandleAnnotationInput()
         }
     }
 
-    if (m_is_drawing && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+    if (m_current_actions.Has(CurrentAction::IsDrawing) && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
     {
-        m_is_drawing = false;
+        m_current_actions.Clear(CurrentAction::IsDrawing);
 
         // Only add annotation if it has meaningful size or points
         bool should_add = false;
@@ -1016,8 +1018,8 @@ void ScreenshotTool::HandleColorPickerInput()
 
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
         {
-            m_current_color    = c;
-            m_is_color_picking = false;
+            m_current_color = c;
+            m_current_actions.Clear(CurrentAction::IsColorPicking);
         }
     }
 
@@ -1034,7 +1036,7 @@ void ScreenshotTool::HandleColorPickerInput()
 
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsKeyPressed(ImGuiKey_Escape))
     {
-        m_is_color_picking = false;
+        m_current_actions.Clear(CurrentAction::IsColorPicking);
         ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
     }
 }
@@ -1234,8 +1236,6 @@ void ScreenshotTool::DrawSelectionBorder()
 
 void ScreenshotTool::DrawMenuItems()
 {
-    static bool show_about = false;
-
     if (ImGui::BeginMenuBar())
     {
         // Now draw the menus
@@ -1301,7 +1301,7 @@ void ScreenshotTool::DrawMenuItems()
 
             ImGui::Separator();
             if (ImGui::MenuItem("Preferences..."))
-                show_preferences_window = true;
+                m_show_window.Set(SubWindow::Preferences);
 
             ImGui::EndMenu();
         }
@@ -1309,24 +1309,25 @@ void ScreenshotTool::DrawMenuItems()
         if (ImGui::BeginMenu("Tools"))
         {
             if (ImGui::MenuItem("Download OCR model"))
-                show_toosl_window = true;
+                m_show_window.Set(SubWindow::OcrDownload);
             ImGui::EndMenu();
         }
 
         if (ImGui::BeginMenu("Help"))
         {
             if (ImGui::MenuItem("About"))
-                show_about = true;
+                m_show_window.Set(SubWindow::About);
             ImGui::EndMenu();
         }
 
         ImGui::EndMenuBar();
     }
 
-    if (show_about)
+    bool open = m_show_window.Has(SubWindow::About);
+    if (open)
     {
         ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
-        ImGui::Begin("About", &show_about, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
+        ImGui::Begin("About", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
         float            window_width = ImGui::GetWindowSize().x;
         std::string_view text_display;
 
@@ -1374,9 +1375,10 @@ void ScreenshotTool::DrawMenuItems()
             minimize_window();
 
         if (ImGui::Button("Close"))
-            show_about = false;
+            m_show_window.Clear(SubWindow::About);
         ImGui::End();
     }
+    m_show_window.Set(SubWindow::About, open);
 }
 
 void ScreenshotTool::DrawOcrTools()
@@ -1686,7 +1688,7 @@ void ScreenshotTool::DrawAnnotationToolbar()
 
             if (ImGui::Button("Pick color"))
             {
-                m_is_color_picking = true;
+                m_current_actions.Set(CurrentAction::IsColorPicking);
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
@@ -1716,10 +1718,10 @@ void ScreenshotTool::DrawAnnotationToolbar()
 
     ImGui::SameLine(0, 16.0f);
 
-    if (!m_show_text_tools)
+    if (!m_show_window.Has(SubWindow::MainTextTools))
     {
         if (ImGui::ImageButton("##ShowTextTools", m_tool_textures[idx(ToolType::ToggleTextTools)], ImVec2(24, 24)))
-            m_show_text_tools = true;
+            m_show_window.Set(SubWindow::MainTextTools);
         ImGui::SameLine();
     }
 
@@ -2131,7 +2133,7 @@ void ScreenshotTool::DrawPreferencesWindow()
     static Config::config_file_t     config_snapshot;  // config state at the moment the window opened
     static Config::theme_overrides_t theme_snapshot;   // theme state at the moment the window opened
 
-    if (!show_preferences_window)
+    if (!m_show_window.Has(SubWindow::Preferences))
     {
         prev_window_open = false;
         return;
@@ -2203,7 +2205,7 @@ void ScreenshotTool::DrawPreferencesWindow()
             if (prefs_modified)
                 ImGui::OpenPopup("Unsaved changes##pref");
             else
-                show_preferences_window = false;
+                m_show_window.Clear(SubWindow::Preferences);
             // Either way, don't propagate to show_preferences_window yet,
             // the window_open local resets to true next frame automatically.
         }
@@ -2252,14 +2254,14 @@ void ScreenshotTool::DrawPreferencesWindow()
             if (ImGui::Button("Save & Close", ImVec2(110, 0)))
             {
                 save_current_tab();
-                show_preferences_window = false;
+                m_show_window.Clear(SubWindow::Preferences);
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
             if (ImGui::Button("Discard", ImVec2(80, 0)))
             {
                 discard_current_tab();
-                show_preferences_window = false;
+                m_show_window.Clear(SubWindow::Preferences);
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SameLine();
@@ -2287,7 +2289,7 @@ void ScreenshotTool::DrawPreferencesWindow()
     ImGui::End();
 
     // Clean up tracking state after a confirmed close so the next open is fresh.
-    if (!show_preferences_window)
+    if (!m_show_window.Has(SubWindow::Preferences))
     {
         prev_window_open = false;
         prefs_modified   = false;
@@ -2298,7 +2300,7 @@ void ScreenshotTool::DrawDownloadOCRWindow()
 {
     ErrorContext<OcrDownloadError>& ectx = m_download_errors;
 
-    if (!show_toosl_window)
+    if (!m_show_window.Has(SubWindow::OcrDownload))
         return;
 
     static bool        has_downloaded = false;
@@ -2314,9 +2316,9 @@ void ScreenshotTool::DrawDownloadOCRWindow()
 
     const bool is_downloading = m_ocr_download && m_ocr_download->running.load();
 
-    bool window_open = true;
+    bool open = m_show_window.Has(SubWindow::OcrDownload);
     ImGui::SetNextWindowSize(ImVec2(520, 0), ImGuiCond_FirstUseEver);  // 0 = auto height
-    if (ImGui::Begin("Download OCR Model##ocr_download_window", &window_open, ImGuiWindowFlags_NoSavedSettings))
+    if (ImGui::Begin("Download OCR Model##ocr_download_window", &open, ImGuiWindowFlags_NoSavedSettings))
     {
         // Lock all inputs while a download is in flight
         if (is_downloading)
@@ -2517,8 +2519,7 @@ void ScreenshotTool::DrawDownloadOCRWindow()
         ImGui::End();
     }
 
-    if (!window_open)
-        show_toosl_window = false;
+    m_show_window.Set(SubWindow::OcrDownload, open);
 }
 
 void ScreenshotTool::DrawAnnotations()
@@ -2643,7 +2644,7 @@ void ScreenshotTool::DrawAnnotations()
         draw_annotation(ann);
 
     // Render current annotation being drawn on top of committed ones
-    if (m_is_drawing)
+    if (m_current_actions.Has(CurrentAction::IsDrawing))
         draw_annotation(m_current_annotation);
 }
 

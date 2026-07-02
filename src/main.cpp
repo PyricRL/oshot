@@ -35,6 +35,7 @@
 #include "screen_capture.hpp"
 #include "screenshot_tool.hpp"
 #include "spdlog/sinks/basic_file_sink.h"
+#include "spdlog/sinks/ringbuffer_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "switch_fnv1a.hpp"
 #include "tinyfiledialogs.h"
@@ -387,7 +388,8 @@ int main(int argc, char* argv[])
     }
 
     auto           console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    spdlog::logger logger("oshot_logger", { console, file });
+    auto           imgui   = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(500);  // keep last 500 lines
+    spdlog::logger logger("oshot_logger", { console, file, imgui });
     spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
 
     // [2026-03-10 17:24:07.593] [DEBUG] <col>message</col>

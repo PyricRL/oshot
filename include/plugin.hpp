@@ -55,3 +55,5 @@ struct plugin_runtime_t
     plugin_runtime_t(plugin_runtime_t&&)                 = default;
     plugin_runtime_t& operator=(plugin_runtime_t&&)      = default;
 };
+
+void load_plugins();

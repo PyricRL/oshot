@@ -222,7 +222,7 @@ set_target_properties(
 # -----------------------------
 # oshot's plugin library
 # -----------------------------
-add_library(oshot_plugin SHARED src/plugins/plugins.cpp)
+add_library(oshot_plugin SHARED src/plugins/oshot_plugins.cpp)
 
 enable_lto(oshot_plugin)
 

@@ -23,6 +23,7 @@
 #include "cache.hpp"
 #include "clipboard.hpp"
 #include "config.hpp"
+#include "fmt/chrono.h"
 #include "fmt/format.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_opengl3_loader.h"
@@ -31,6 +32,7 @@
 #include "plugin.hpp"
 #include "plugins/oshot_plugin.h"
 #include "screen_capture.hpp"
+#include "spdlog/sinks/ringbuffer_sink.h"
 #include "tiny-process-library/process.hpp"
 #include "tinyfiledialogs.h"
 #include "tool_icons.h"
@@ -255,93 +257,6 @@ static std::unordered_map<std::string, int>& color_name_map()
     return map;
 }
 
-static void load_plugins()
-{
-    const fs::path pluginDir = get_config_dir() / "plugins";
-    fs::create_directories(pluginDir);
-
-    for (const auto& plugin_dir : fs::directory_iterator(pluginDir, fs::directory_options::skip_permission_denied))
-    {
-        if (!plugin_dir.is_directory())
-            continue;
-
-        const std::string expected =
-            "lib" + plugin_dir.path().filename().string() + dylib::decorations::os_default().suffix;
-
-        for (const auto& entry :
-             fs::directory_iterator(plugin_dir.path(), fs::directory_options::skip_permission_denied))
-        {
-            if (entry.path().filename() != expected)
-                continue;
-
-            try
-            {
-                dylib::library  lib(entry.path().string());
-                auto            oshot_get_plugin = lib.get_function<oshot_plugin_t*(void)>("oshot_host_get_plugin");
-                oshot_plugin_t* plugin           = oshot_get_plugin();
-
-                if (!plugin || plugin->abi_version != oshot_get_abi_version())
-                {
-                    error("Plugin '{}' has incompatible ABI version, skipping", entry.path().stem().string());
-                    continue;
-                }
-
-                if (!plugin->render || !plugin->id || !plugin->name || plugin->name[0] == '\0')
-                {
-                    error("Plugin '{}' doesn't define name/ID or render function", entry.path().stem().string());
-                    continue;
-                }
-
-                if (plugin->id[0] == '.' ||
-                    !std::ranges::all_of(std::string_view(plugin->id), [](const unsigned char c) {
-                        return (isalnum(c) || c == '-' || c == '_' || c == '=' || c == '.');
-                    }))
-                {
-                    error("Plugin '{}' has an invalid ID", plugin->id);
-                    continue;
-                }
-
-                if (!std::ranges::all_of(std::string_view(plugin->name), [](const unsigned char c) {
-                        return (isalnum(c) || c == '-' || c == '_' || c == '=' || c == ' ');
-                    }))
-                {
-                    error("Plugin '{}' contains chars other than -_= or alpha numerical", plugin->id);
-                    continue;
-                }
-
-                auto [it, inserted] = g_plugins.try_emplace(plugin->id,
-                                                            plugin->id,
-                                                            fmt::format("plugins.{}.", plugin->id),
-                                                            get_config_dir() / "plugins" / plugin->id,
-                                                            plugin,
-                                                            nullptr,  // state filled in below
-                                                            std::move(lib));
-                if (!inserted)
-                {
-                    error("Duplicate plugin '{}'", plugin->id);
-                    continue;
-                }
-
-                if (plugin->init)
-                {
-                    ScopedActivePlugin _(&it->second);
-                    it->second.state = plugin->init();
-                }
-
-                spdlog::info("loading plugin at {}!", entry.path().string());
-            }
-            catch (const dylib::load_error& e)
-            {
-                error("Failed to load '{}' library: {}", entry.path().stem().string(), e.what());
-            }
-            catch (const dylib::symbol_error& e)
-            {
-                error("Failed to get 'oshot_get_plugin()' symbol: {}", e.what());
-            }
-        }
-    }
-}
-
 void apply_imgui_theme()
 {
     const std::string& base = g_config->File.theme_style;
@@ -494,10 +409,9 @@ Result<> ScreenshotTool::StartWindow()
 
 void ScreenshotTool::RenderOverlay()
 {
-    const bool disable_esc =
-        (m_current_actions.Has(CurrentAction::IsTextPlacing) || m_current_actions.Has(CurrentAction::IsColorPicking) ||
-         m_show_window.Has(SubWindow::Preferences) || m_show_window.Has(SubWindow::OcrDownload)) &&
-        !g_config->File.show_text_tools;
+    const bool disable_esc = (m_current_actions.HasAny(CurrentAction::IsTextPlacing, CurrentAction::IsColorPicking) ||
+                              m_show_window.HasAny(SubWindow::OcrDownload, SubWindow::Preferences)) &&
+                             !g_config->File.show_text_tools;
 
     static constexpr int minimal_win_flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
                                              ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoResize |
@@ -554,6 +468,7 @@ void ScreenshotTool::RenderOverlay()
         DrawMenuItems();
         DrawPreferencesWindow();
         DrawDownloadOCRWindow();
+        DrawLogsWindow();
         DrawOcrTools();
         DrawBarDecodeTools();
         for (auto& [_, entry] : g_plugins)
@@ -1310,6 +1225,9 @@ void ScreenshotTool::DrawMenuItems()
         {
             if (ImGui::MenuItem("Download OCR model"))
                 m_show_window.Set(SubWindow::OcrDownload);
+            ImGui::Separator();
+            if (ImGui::MenuItem("Show Logs"))
+                m_show_window.Set(SubWindow::Logs);
             ImGui::EndMenu();
         }
 
@@ -2294,6 +2212,139 @@ void ScreenshotTool::DrawPreferencesWindow()
         prev_window_open = false;
         prefs_modified   = false;
     }
+}
+
+void ScreenshotTool::DrawLogsWindow()
+{
+    static std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> imgui_ring;
+    if (!imgui_ring)
+        if (auto logger = spdlog::get("oshot_logger"))
+            imgui_ring = std::dynamic_pointer_cast<spdlog::sinks::ringbuffer_sink_mt>(logger->sinks()[2]);
+
+    if (!m_show_window.Has(SubWindow::Logs) || !imgui_ring)
+        return;
+
+    auto level_color = [](spdlog::level::level_enum lvl) -> rgba_t {
+        switch (lvl)
+        {
+            case spdlog::level::trace:    return rgba_t(0x888888FF); // gray
+            case spdlog::level::debug:    return rgba_t(0x9999FFFF); // periwinkle
+            case spdlog::level::info:     return rgba_t(0x00AEFFFF); // blueish
+            case spdlog::level::warn:     return rgba_t(0xFFCC33FF); // amber
+            case spdlog::level::err:      return rgba_t(0xFF4D4DFF); // red
+            case spdlog::level::critical: return rgba_t(0xFF0000FF); // pure red
+            default:                      return rgba_t(0xFFFFFFFF); // white
+        }
+    };
+
+    auto level_tag = [](spdlog::level::level_enum lvl) -> const char* {
+        switch (lvl)
+        {
+            case spdlog::level::trace:    return "TRACE";
+            case spdlog::level::debug:    return "DEBUG";
+            case spdlog::level::info:     return "INFO";
+            case spdlog::level::warn:     return "WARN";
+            case spdlog::level::err:      return "ERROR";
+            case spdlog::level::critical: return "CRIT";
+            default:                      return "OFF";
+        }
+    };
+
+    // Persistent UI state for this window
+    static ImGuiTextFilter               text_filter;
+    static spdlog::level::level_enum     min_level  = spdlog::level::debug;
+    static bool                          autoscroll = true;
+    static spdlog::log_clock::time_point cleared_before{};  // "soft clear" marker
+
+    bool open = m_show_window.Has(SubWindow::Logs);
+    ImGui::SetNextWindowSize(ImVec2(560, 400), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Logs##logs_window", &open, ImGuiWindowFlags_NoSavedSettings))
+    {
+        // --- Toolbar ---
+        if (ImGui::Button("Clear"))
+            cleared_before = spdlog::log_clock::now();
+
+        ImGui::SameLine();
+        bool copy_all = ImGui::Button("Copy");
+        ImGui::SameLine();
+        ImGui::Checkbox("Auto-scroll", &autoscroll);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(110);
+        if (ImGui::BeginCombo("##min_level", level_tag(min_level)))
+        {
+            for (int i = spdlog::level::trace; i < spdlog::level::off; ++i)
+            {
+                auto lvl      = toe<spdlog::level::level_enum>(i);
+                bool selected = (lvl == min_level);
+                if (ImGui::Selectable(level_tag(lvl), selected))
+                    min_level = lvl;
+                if (selected)
+                    ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        text_filter.Draw("Filter", 200);
+
+        ImGui::Separator();
+
+        // --- Build filtered view ---
+        const std::vector<spdlog::details::log_msg_buffer>& all = imgui_ring->last_raw();
+        std::vector<const spdlog::details::log_msg_buffer*> shown;
+        shown.reserve(all.size());
+        for (const auto& msg : all)
+        {
+            if (msg.level < min_level || msg.time <= cleared_before)
+                continue;
+            if (!text_filter.PassFilter(msg.payload.data(), msg.payload.data() + msg.payload.size()))
+                continue;
+            shown.push_back(&msg);
+        }
+
+        // --- Scrolling log region ---
+        ImGui::BeginChild("##log_scroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+        ImGuiListClipper clipper;
+        clipper.Begin(static_cast<int>(shown.size()));
+        while (clipper.Step())
+        {
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
+            {
+                const auto&        msg      = *shown[i];
+                auto               time_ms  = std::chrono::time_point_cast<std::chrono::milliseconds>(msg.time);
+                const std::string& time_fmt = fmt::format("{:%H:%M:%S}", time_ms);
+
+                ImGui::TextDisabled("%s", time_fmt.c_str());
+                ImGui::SameLine();
+                ImGui::TextColored(level_color(msg.level).to_imvec4(), "[%s]", level_tag(msg.level));
+                ImGui::SameLine();
+                ImGui::TextUnformatted(msg.payload.data(), msg.payload.data() + msg.payload.size());
+
+                if (ImGui::BeginPopupContextItem(fmt::format("ctx##{}", i).c_str()))
+                {
+                    if (ImGui::MenuItem("Copy line"))
+                        MUST_OK(g_clipboard.CopyText(msg.payload.data()), error("Failed to copy line log: {}", _r.error_v()));
+                    ImGui::EndPopup();
+                }
+            }
+        }
+
+        if (copy_all)
+        {
+            std::string all_text;
+            for (const auto* msg : shown)
+                all_text += fmt::format("[{}] {}\n", level_tag(msg->level), msg->payload);
+            MUST_OK(g_clipboard.CopyText(all_text), error("Failed to copy logs: {}", _r.error_v()));
+        }
+
+        if (autoscroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f)
+            ImGui::SetScrollHereY(1.0f);
+
+        ImGui::EndChild();
+        ImGui::End();
+    }
+
+    m_show_window.Set(SubWindow::Logs, open);
 }
 
 void ScreenshotTool::DrawDownloadOCRWindow()

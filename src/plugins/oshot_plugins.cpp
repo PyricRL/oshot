@@ -38,28 +38,11 @@ void oshot_str_free(oshot_str_t* str)
 }
 
 /* ------------------------------------------------------------------
- * Logging / host messaging
+ * Logging
  * ------------------------------------------------------------------ */
-void oshot_display_msg(const OSLogLevel lvl, oshot_str_t str)
+void oshot_log(const OSLogLevel lvl, oshot_str_t str)
 {
     const std::string& out = fmt::format("{}: {}", g_current_plugin->plugin->id, std::string_view(str.p, str.len));
-    switch (lvl)
-    {
-        case OSLogLevel::OSHOT_LOG_DEBUG:
-            spdlog::warn("OSHOT_LOG_DEBUG is not allowed when displaying a message.");
-            break;
-        case OSLogLevel::OSHOT_LOG_INFO:  info("{}", out); break;
-        case OSLogLevel::OSHOT_LOG_WARN:  warn("{}", out); break;
-        case OSLogLevel::OSHOT_LOG_ERROR: error("{}", out); break;
-    }
-}
-
-void oshot_log(OSLogLevel lvl, oshot_str_t str)
-{
-    auto now = std::chrono::system_clock::now();
-
-    const std::string& out =
-        fmt::format("[{}] {}: {}", now, g_current_plugin->plugin->id, std::string_view(str.p, str.len));
     switch (lvl)
     {
         case OSLogLevel::OSHOT_LOG_DEBUG: spdlog::debug("{}", out); break;
@@ -72,13 +55,6 @@ void oshot_log(OSLogLevel lvl, oshot_str_t str)
 void oshot_debug(oshot_str_t str)
 {
     oshot_log(OSLogLevel::OSHOT_LOG_DEBUG, std::move(str));
-}
-
-void oshot_display_msg_s(OSLogLevel lvl, const char* str)
-{
-    oshot_str_t s = oshot_str_new(str, strlen(str));
-    oshot_display_msg(lvl, s);
-    oshot_str_free(&s);
 }
 
 void oshot_log_s(OSLogLevel lvl, const char* str)

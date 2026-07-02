@@ -86,6 +86,7 @@ enum class SubWindow
     About,
     Preferences,
     MainTextTools,
+    Logs,
     COUNT
 };
 
@@ -329,7 +330,7 @@ private:
 
     GeneralContext<SubWindow>                      m_show_window;
     GeneralContext<CurrentAction>                  m_current_actions;
-    std::array<ImTextureRef, idx(ToolType::Count)> m_tool_textures{};
+    std::array<ImTextureRef, idx(ToolType::Count)> m_tool_textures;
     ToolType                                       m_current_tool = ToolType::kNone;
     std::vector<annotation_t>                      m_annotations;
     annotation_t                                   m_current_annotation;
@@ -358,6 +359,7 @@ private:
     void DrawAnnotationToolbar();
     void DrawPreferencesWindow();
     void DrawDownloadOCRWindow();
+    void DrawLogsWindow();
 
     void UpdateHandleHoverState();
     void UpdateCursor();

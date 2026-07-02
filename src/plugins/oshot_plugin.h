@@ -101,12 +101,10 @@ void        oshot_str_free(oshot_str_t* str);
 /* ------------------------------------------------------------------
  * Logging / host messaging
  * ------------------------------------------------------------------ */
-void oshot_display_msg(OSLogLevel lvl, oshot_str_t str);
 void oshot_log(OSLogLevel lvl, oshot_str_t str);
 void oshot_debug(oshot_str_t str);  // oshot_log(DEBUG, str);
 
 // convinience ig
-void oshot_display_msg_s(OSLogLevel lvl, const char* str);
 void oshot_log_s(OSLogLevel lvl, const char* str);
 void oshot_debug_s(const char* str);  // oshot_log(DEBUG, str);
 

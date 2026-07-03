@@ -10,8 +10,14 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+# GCC/Clang default Release flags already include -O3; this just makes it
+# explicit. Guarded because "-O3" is not a valid cl.exe switch and would
+# otherwise spam D9002 (or hard-fail under /WX) on MSVC builds.
+if(NOT MSVC)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+endif()
 
 # LTO helper
 function(enable_lto target)
@@ -31,6 +37,12 @@ function(enable_lto target)
 endfunction()
 
 # https://github.com/libcpr/cpr/blob/5f475522597b8f3721e2440daddeced7a969f24c/CMakeLists.txt#L39
+# NOTE: definitions are collected into OSHOT_OPTION_DEFINITIONS instead of
+# using add_definitions(), which is directory-scoped and would otherwise leak
+# into every target declared afterward -- including vendored third-party
+# libs (fmt, imgui, tray, clip, dylib, nvdialog, tiny-process-library).
+# They're applied to just ${PROJECT_NAME} once it exists (see below).
+set(OSHOT_OPTION_DEFINITIONS "")
 macro(add_option OPTION_NAME OPTION_TEXT OPTION_DEFAULT DEFINE_OPTION)
     option(${OPTION_NAME} ${OPTION_TEXT} ${OPTION_DEFAULT})
     if(DEFINED ENV{${OPTION_NAME}})
@@ -38,7 +50,7 @@ macro(add_option OPTION_NAME OPTION_TEXT OPTION_DEFAULT DEFINE_OPTION)
         set(${OPTION_NAME} $ENV{${OPTION_NAME}})
     endif()
     if(${OPTION_NAME} AND DEFINE_OPTION)
-        add_definitions(-D${OPTION_NAME}=1)
+        list(APPEND OSHOT_OPTION_DEFINITIONS ${OPTION_NAME}=1)
     endif()
     message(STATUS "  ${OPTION_NAME}: ${${OPTION_NAME}}")
 endmacro()
@@ -65,9 +77,9 @@ else()
 endif()
 
 find_package(OpenGL REQUIRED)
-pkg_check_modules(TESSERACT REQUIRED tesseract)
-pkg_check_modules(LEPTONICA REQUIRED lept)
-pkg_check_modules(ZBAR REQUIRED zbar)
+pkg_check_modules(TESSERACT REQUIRED IMPORTED_TARGET tesseract)
+pkg_check_modules(LEPTONICA REQUIRED IMPORTED_TARGET lept)
+pkg_check_modules(ZBAR REQUIRED IMPORTED_TARGET zbar)
 
 # Homebrew's lept.pc points Cflags at .../include/leptonica directly (its
 # own convention is `#include <allheaders.h>`), but our code uses
@@ -97,21 +109,34 @@ endif()
 # Main executable
 # -----------------------------
 
-file(
-    GLOB SRC
-    src/*.cpp
-    src/libs/toml++/toml.cpp
+add_executable(
+    ${PROJECT_NAME}
+    src/main.cpp
+    src/main_tool_opengl3.cpp
     src/libs/getopt_port/getopt.c
-    src/libs/tinyfiledialogs/tinyfiledialogs.c
 )
-
-add_executable(${PROJECT_NAME} ${SRC})
 enable_lto(${PROJECT_NAME})
 
 execute_process(
     COMMAND ./scripts/generateVersion.sh
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    RESULT_VARIABLE OSHOT_VERSION_SCRIPT_RESULT
 )
+if(NOT OSHOT_VERSION_SCRIPT_RESULT EQUAL 0)
+    message(
+        WARNING
+        "scripts/generateVersion.sh failed or is unavailable "
+        "(exit ${OSHOT_VERSION_SCRIPT_RESULT}); generated version info may be stale or missing. "
+        "Note this script also won't run on a native Windows shell without sh on PATH (e.g. Git Bash/MSYS)."
+    )
+endif()
+
+if(OSHOT_OPTION_DEFINITIONS)
+    target_compile_definitions(
+        ${PROJECT_NAME}
+        PRIVATE ${OSHOT_OPTION_DEFINITIONS}
+    )
+endif()
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CONFIG:Debug>:DEBUG=1>)
 target_compile_options(
@@ -120,103 +145,16 @@ target_compile_options(
         $<$<CONFIG:Debug>:-ggdb3;-fno-omit-frame-pointer;-Wall;-Wextra;-pedantic;-Wno-unused-parameter>
 )
 
-target_compile_definitions(
-    ${PROJECT_NAME}
-    PRIVATE VERSION="${PROJECT_VERSION}" TOML_HEADER_ONLY=0
-)
+add_dependencies(${PROJECT_NAME} oshot_common oshot_plugin)
 
-target_include_directories(
-    ${PROJECT_NAME}
-    PRIVATE
-        include/
-        include/libs
-        ${TESSERACT_INCLUDE_DIRS}
-        ${LEPTONICA_INCLUDE_DIRS}
-        ${ZBAR_INCLUDE_DIRS}
-)
+target_link_libraries(${PROJECT_NAME} PRIVATE oshot_common oshot_plugin)
 
-if(UNIX AND NOT APPLE)
-    target_include_directories(
-        ${PROJECT_NAME}
-        PRIVATE ${APPINDICATOR_INCLUDE_DIRS}
-    )
-    target_compile_options(${PROJECT_NAME} PRIVATE ${APPINDICATOR_CFLAGS_OTHER})
-endif()
-
-target_compile_options(
-    ${PROJECT_NAME}
-    PRIVATE
-        ${TESSERACT_CFLAGS_OTHER}
-        ${LEPTONICA_CFLAGS_OTHER}
-        ${ZBAR_CFLAGS_OTHER}
-)
-
-target_link_directories(
-    ${PROJECT_NAME}
-    PRIVATE
-        ${TESSERACT_LIBRARY_DIRS}
-        ${LEPTONICA_LIBRARY_DIRS}
-        ${ZBAR_LIBRARY_DIRS}
-)
-
-target_link_libraries(
-    ${PROJECT_NAME}
-    PRIVATE
-        OpenGL::GL
-        ${GLFW_TARGET}
-        ${TESSERACT_LIBRARIES}
-        ${LEPTONICA_LIBRARIES}
-        ${ZBAR_LIBRARIES}
-)
-
-if(WIN32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32 shcore d3d11 dxgi)
-
-    if(NOT WINDOWS_CMD)
-        set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
-    endif()
-elseif(APPLE)
-    target_compile_options(
-        ${PROJECT_NAME}
-        PRIVATE -fobjc-arc $<$<CXX_COMPILER_ID:AppleClang>:-stdlib=libc++>
-    )
-
-    # Add Metal render loop source
-    target_sources(${PROJECT_NAME} PRIVATE src/main_tool_metal.mm)
-    target_link_options(
-        ${PROJECT_NAME}
-        PRIVATE $<$<CXX_COMPILER_ID:AppleClang>:-stdlib=libc++>
-    )
-    target_link_libraries(
-        ${PROJECT_NAME}
-        PRIVATE
-            "-framework Metal"
-            "-framework QuartzCore"
-            "-framework CoreGraphics"
-            "-framework Cocoa"
-            "-framework IOKit"
-            "-framework OpenGL"
-    )
-elseif(UNIX)
-    target_link_libraries(${PROJECT_NAME} PRIVATE X11::X11)
-    target_include_directories(
-        ${PROJECT_NAME}
-        PRIVATE
-        SYSTEM
-        ${GIO_INCLUDE_DIRS}
-        ${XRANDR_INCLUDE_DIRS}
-    )
-    target_link_libraries(
-        ${PROJECT_NAME}
-        PRIVATE ${GIO_LIBRARIES} ${XRANDR_LIBRARIES}
-    )
-    target_compile_options(
-        ${PROJECT_NAME}
-        PRIVATE ${GIO_CFLAGS_OTHER} ${XRANDR_CFLAGS_OTHER}
-    )
+if(WIN32 AND NOT WINDOWS_CMD)
+    set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 
 if(APPLE)
+    target_sources(${PROJECT_NAME} PRIVATE src/main_tool_metal.mm)
     set(_rpath_origin "@loader_path")
 else()
     set(_rpath_origin "$ORIGIN")
@@ -230,43 +168,131 @@ set_target_properties(
 )
 
 # -----------------------------
-# oshot's plugin library
+# Common library for shared code
 # -----------------------------
 add_library(
-    oshot_plugin
-    SHARED
-    src/plugins/oshot_plugins.cpp
+    oshot_common
+    STATIC
+    src/cache.cpp
+    src/clipboard.cpp
+    src/config.cpp
+    src/globals.cpp
+    src/plugins.cpp
+    src/screen_capture.cpp
+    src/screenshot_tool.cpp
+    src/text_extraction.cpp
+    src/util.cpp
     src/libs/toml++/toml.cpp
+    src/libs/tinyfiledialogs/tinyfiledialogs.c
 )
 
-enable_lto(oshot_plugin)
+enable_lto(oshot_common)
+
+if(WIN32)
+    target_link_libraries(oshot_common PRIVATE ws2_32 shcore d3d11 dxgi)
+    if(MINGW)
+        target_link_options(${PROJECT_NAME} PRIVATE -Wl,--export-all-symbols)
+    endif()
+elseif(APPLE)
+    target_compile_options(
+        oshot_common
+        PRIVATE -fobjc-arc $<$<CXX_COMPILER_ID:AppleClang>:-stdlib=libc++>
+    )
+    target_link_options(
+        oshot_common
+        PRIVATE $<$<CXX_COMPILER_ID:AppleClang>:-stdlib=libc++>
+    )
+    target_link_libraries(
+        oshot_common
+        PRIVATE
+            "-framework Metal"
+            "-framework QuartzCore"
+            "-framework CoreGraphics"
+            "-framework Cocoa"
+            "-framework IOKit"
+            "-framework OpenGL"
+    )
+else()
+    target_include_directories(
+        oshot_common
+        PRIVATE ${APPINDICATOR_INCLUDE_DIRS}
+    )
+    target_compile_options(oshot_common PRIVATE ${APPINDICATOR_CFLAGS_OTHER})
+
+    target_link_libraries(oshot_common PRIVATE X11::X11)
+    target_include_directories(
+        oshot_common
+        PRIVATE
+        SYSTEM
+        ${GIO_INCLUDE_DIRS}
+        ${XRANDR_INCLUDE_DIRS}
+    )
+    target_link_libraries(
+        oshot_common
+        PRIVATE ${GIO_LIBRARIES} ${XRANDR_LIBRARIES}
+    )
+    target_compile_options(
+        oshot_common
+        PRIVATE ${GIO_CFLAGS_OTHER} ${XRANDR_CFLAGS_OTHER}
+    )
+endif()
+
+target_link_libraries(
+    oshot_common
+    PUBLIC
+        fmt
+        imgui
+        tray
+        clip
+        dylib
+        nvdialog
+        tiny-process-library
+        PkgConfig::TESSERACT
+        PkgConfig::LEPTONICA
+        PkgConfig::ZBAR
+        OpenGL::GL
+        ${GLFW_TARGET}
+    PRIVATE Threads::Threads
+)
+target_compile_definitions(
+    oshot_common
+    PUBLIC VERSION="${PROJECT_VERSION}" TOML_HEADER_ONLY=0
+)
+
+# NOTE: PkgConfig::TESSERACT / PkgConfig::ZBAR already propagate their own
+# include dirs, link dirs, and compile options as usage requirements via
+# target_link_libraries() above -- no need to add TESSERACT_*/ZBAR_* here too.
+# LEPTONICA_INCLUDE_DIRS is the one exception: it was patched earlier in this
+# file to add the parent directory for Homebrew's lept.pc convention, which
+# PkgConfig::LEPTONICA's own interface include dirs don't have.
+target_include_directories(
+    oshot_common
+    PUBLIC
+        include/
+        include/libs
+        ${LEPTONICA_INCLUDE_DIRS}
+)
+
+target_compile_features(oshot_common PUBLIC cxx_std_20)
+
+# -----------------------------
+# oshot's plugin library
+# -----------------------------
+add_library(oshot_plugin SHARED src/plugins/oshot_plugins.cpp)
+
+add_dependencies(oshot_plugin oshot_common)
 
 target_include_directories(oshot_plugin PUBLIC include/ include/libs)
-target_include_directories(
-    oshot_plugin
-    PRIVATE
-        ${TESSERACT_INCLUDE_DIRS}
-        ${LEPTONICA_INCLUDE_DIRS}
-        ${ZBAR_INCLUDE_DIRS}
-)
-target_compile_definitions(oshot_plugin PRIVATE VERSION="${PROJECT_VERSION}")
+
 target_compile_features(oshot_plugin PUBLIC cxx_std_20)
 
-target_link_libraries(oshot_plugin PUBLIC fmt)
-target_link_libraries(
-    oshot_plugin
-    PRIVATE
-        nvdialog
-        ${TESSERACT_LIBRARIES}
-        ${LEPTONICA_LIBRARIES}
-        ${ZBAR_LIBRARIES}
-)
+target_link_libraries(oshot_plugin PUBLIC oshot_common)
+
+# Everything else is inherited from oshot_common
 set_target_properties(
     oshot_plugin
     PROPERTIES VERSION 1 SOVERSION 1 WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
-
-target_link_libraries(${PROJECT_NAME} PRIVATE oshot_plugin)
 
 # -----------------------------
 # fmt library
@@ -279,9 +305,6 @@ enable_lto(fmt)
 target_include_directories(fmt PUBLIC include/libs)
 target_compile_features(fmt PUBLIC cxx_std_20)
 target_compile_definitions(fmt PUBLIC FMT_HEADER_ONLY=0)
-set_target_properties(fmt PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE fmt)
 
 # -----------------------------
 # imgui library
@@ -317,8 +340,6 @@ if(APPLE)
 endif()
 
 set_target_properties(imgui PROPERTIES VERSION 1.92.9 SOVERSION 1)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE imgui)
 
 # -----------------------------
 # cimgui library (C-ABI plugins only)
@@ -387,12 +408,6 @@ endif()
 
 target_include_directories(tray PUBLIC include/libs)
 target_compile_features(tray PRIVATE cxx_std_20)
-set_target_properties(
-    tray
-    PROPERTIES CXX_STANDARD 20 CXX_EXTENSIONS OFF CXX_STANDARD_REQUIRED ON
-)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE tray)
 
 # -----------------------------
 # clip library (integrated from its own CMakeLists.txt)
@@ -425,12 +440,6 @@ endif()
 target_include_directories(clip PUBLIC include/libs/clip)
 target_compile_features(clip PRIVATE cxx_std_20)
 target_compile_definitions(clip PUBLIC CLIP_ENABLE_IMAGE=1)
-set_target_properties(
-    clip
-    PROPERTIES CXX_STANDARD 20 CXX_EXTENSIONS OFF CXX_STANDARD_REQUIRED ON
-)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE clip)
 
 # -----------------------------
 # dylib library (integrated from its own CMakeLists.txt)
@@ -445,12 +454,6 @@ endif()
 
 target_include_directories(dylib PUBLIC include/libs/)
 target_compile_features(dylib PRIVATE cxx_std_20)
-set_target_properties(
-    dylib
-    PROPERTIES CXX_STANDARD 20 CXX_EXTENSIONS OFF CXX_STANDARD_REQUIRED ON
-)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE dylib)
 
 # -----------------------------
 # nvdialog (integrated from its own CMakeLists.txt)
@@ -483,7 +486,7 @@ target_include_directories(
 
 set_target_properties(
     nvdialog
-    PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON
+    PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON
 )
 
 if(WIN32)
@@ -519,8 +522,6 @@ else()
     target_link_libraries(nvdialog PRIVATE ${GTK_LIBRARIES} ${DBUS_LIBRARIES})
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE nvdialog)
-
 # -----------------------------
 # tiny-process-library (integrated from its own CMakeLists.txt)
 # -----------------------------
@@ -546,7 +547,6 @@ else()
 endif()
 
 if(WIN32)
-    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
     target_sources(
         tiny-process-library
         PRIVATE "src/libs/tiny-process-library/process_win.cpp"
@@ -565,13 +565,12 @@ else()
     )
 endif()
 
-target_link_libraries(tiny-process-library Threads::Threads)
+target_link_libraries(tiny-process-library PUBLIC Threads::Threads)
 target_include_directories(
     tiny-process-library
     PUBLIC include/libs/tiny-process-library
 )
 enable_lto(tiny-process-library)
-target_link_libraries(${PROJECT_NAME} PRIVATE tiny-process-library)
 
 # -----------------------------
 # Install
@@ -583,6 +582,7 @@ install(
     TARGETS ${PROJECT_NAME} imgui cimgui oshot_plugin
     RUNTIME DESTINATION bin COMPONENT runtime
     LIBRARY DESTINATION lib COMPONENT runtime
+    ARCHIVE DESTINATION lib COMPONENT runtime
 )
 
 install(

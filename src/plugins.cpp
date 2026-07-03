@@ -34,7 +34,8 @@ void load_plugins()
 
                 if (!plugin->render || !plugin->id || !plugin->name || plugin->name[0] == '\0')
                 {
-                    spdlog::error("Plugin '{}' doesn't define name/ID or render function", entry.path().stem().string());
+                    spdlog::error("Plugin '{}' doesn't define name/ID or render function",
+                                  entry.path().stem().string());
                     continue;
                 }
 

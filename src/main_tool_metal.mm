@@ -24,24 +24,16 @@
 
 void glfw_error_callback(int error, const char* description);
 void glfw_drop_callback(GLFWwindow*, int count, const char** paths);
-void extern_glfwTerminate()
-{
-    glfwTerminate();
-}
-void extern_glfwSwapInterval(int v)
-{
-    glfwSwapInterval(v);
-}
 
 GLFWwindow* window = nullptr;
 
-void minimize_window()
+static void minimize_window_()
 {
     glfwIconifyWindow(window);
     glfwPollEvents();  // flush
 }
 
-void maximize_window()
+static void maximize_window_()
 {
     glfwRestoreWindow(window);
     glfwFocusWindow(window);
@@ -65,6 +57,7 @@ static id<MTLTexture> create_metal_texture(id<MTLDevice> device, const uint8_t* 
 
 int run_main_tool()
 {
+    register_window_callbacks(minimize_window_, maximize_window_, glfwTerminate, glfwSwapInterval);
     id<MTLDevice> device;
 
     // vsync is controlled via the CAMetalLayer's displaySyncEnabled property instead.

@@ -610,6 +610,38 @@ fs::path get_home_pictures_dir()
 }
 #endif
 
+void register_window_callbacks(void (*minimize_fn)(),
+                               void (*maximize_fn)(),
+                               void (*terminate_fn)(),
+                               void (*swap_interval_fn)(int))
+{
+    g_minimize_fn      = minimize_fn;
+    g_maximize_fn      = maximize_fn;
+    g_terminate_fn     = terminate_fn;
+    g_swap_interval_fn = swap_interval_fn;
+}
+
+void minimize_window()
+{
+    if (g_minimize_fn)
+        g_minimize_fn();
+}
+void maximize_window()
+{
+    if (g_maximize_fn)
+        g_maximize_fn();
+}
+void extern_glfwTerminate()
+{
+    if (g_terminate_fn)
+        g_terminate_fn();
+}
+void extern_glfwSwapInterval(int v)
+{
+    if (g_swap_interval_fn)
+        g_swap_interval_fn(v);
+}
+
 std::string expand_var(std::string ret)
 {
     if (ret.empty())

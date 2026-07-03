@@ -23,14 +23,6 @@ GLFWwindow* window = nullptr;
 
 void glfw_error_callback(int i_error, const char* description);
 void glfw_drop_callback(GLFWwindow*, int count, const char** paths);
-void extern_glfwTerminate()
-{
-    glfwTerminate();
-}
-void extern_glfwSwapInterval(int v)
-{
-    glfwSwapInterval(v);
-}
 
 // Returns the GLFW monitor that currently contains the cursor.
 // Falls back to the primary monitor if the cursor position cannot be
@@ -86,13 +78,13 @@ static GLFWmonitor* get_monitor_at_cursor()
     return glfwGetPrimaryMonitor();
 }
 
-void minimize_window()
+static void minimize_window_()
 {
     glfwIconifyWindow(window);
     glfwPollEvents();  // flush
 }
 
-void maximize_window()
+static void maximize_window_()
 {
     glfwRestoreWindow(window);
     glfwFocusWindow(window);
@@ -100,6 +92,8 @@ void maximize_window()
 
 int run_main_tool()
 {
+    register_window_callbacks(minimize_window_, maximize_window_, glfwTerminate, glfwSwapInterval);
+
     // Setup Screenshot Tool
     // Calling it before starting the window so that
     // we can capture at the exact moment we launch

@@ -1293,7 +1293,7 @@ void ScreenshotTool::DrawMenuItems()
             minimize_window();
 
         if (ImGui::Button("Close"))
-            m_show_window.Clear(SubWindow::About);
+            open = false;
         ImGui::End();
     }
     m_show_window.Set(SubWindow::About, open);
@@ -2227,13 +2227,13 @@ void ScreenshotTool::DrawLogsWindow()
     auto level_color = [](spdlog::level::level_enum lvl) -> rgba_t {
         switch (lvl)
         {
-            case spdlog::level::trace:    return rgba_t(0x888888FF); // gray
-            case spdlog::level::debug:    return rgba_t(0x9999FFFF); // periwinkle
-            case spdlog::level::info:     return rgba_t(0x00AEFFFF); // blueish
-            case spdlog::level::warn:     return rgba_t(0xFFCC33FF); // amber
-            case spdlog::level::err:      return rgba_t(0xFF4D4DFF); // red
-            case spdlog::level::critical: return rgba_t(0xFF0000FF); // pure red
-            default:                      return rgba_t(0xFFFFFFFF); // white
+            case spdlog::level::trace:    return rgba_t(0x888888FF);  // gray
+            case spdlog::level::debug:    return rgba_t(0x9999FFFF);  // periwinkle
+            case spdlog::level::info:     return rgba_t(0x00AEFFFF);  // blueish
+            case spdlog::level::warn:     return rgba_t(0xFFCC33FF);  // amber
+            case spdlog::level::err:      return rgba_t(0xFF4D4DFF);  // red
+            case spdlog::level::critical: return rgba_t(0xFF0000FF);  // pure red
+            default:                      return rgba_t(0xFFFFFFFF);                       // white
         }
     };
 
@@ -2323,7 +2323,8 @@ void ScreenshotTool::DrawLogsWindow()
                 if (ImGui::BeginPopupContextItem(fmt::format("ctx##{}", i).c_str()))
                 {
                     if (ImGui::MenuItem("Copy line"))
-                        MUST_OK(g_clipboard.CopyText(msg.payload.data()), spdlog::error("Failed to copy line log: {}", _r.error_v()));
+                        MUST_OK(g_clipboard.CopyText(msg.payload.data()),
+                                spdlog::error("Failed to copy line log: {}", _r.error_v()));
                     ImGui::EndPopup();
                 }
             }

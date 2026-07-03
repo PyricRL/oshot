@@ -293,10 +293,22 @@ Result<capture_result_t> load_image_rgba(const std::string& path);
 Result<std::string>      get_config_image_out_fmt();
 Result<>                 save_png(SavingOp op, const capture_result_t& img);
 
-void minimize_window();               // Defined on main_tool_*
-void maximize_window();               // Defined on main_tool_*
-void extern_glfwTerminate();          // Defined on main_tool_*
-void extern_glfwSwapInterval(int v);  // Defined on main_tool_*
+// Defined on main_tool_*
+namespace
+{
+void (*g_minimize_fn)()         = nullptr;
+void (*g_maximize_fn)()         = nullptr;
+void (*g_terminate_fn)()        = nullptr;
+void (*g_swap_interval_fn)(int) = nullptr;
+}  // namespace
+void register_window_callbacks(void (*minimize_fn)(),
+                               void (*maximize_fn)(),
+                               void (*terminate_fn)(),
+                               void (*swap_interval_fn)(int));
+void minimize_window();
+void maximize_window();
+void extern_glfwTerminate();
+void extern_glfwSwapInterval(int v);
 void fit_to_screen(capture_result_t& img);
 void rgba_to_grayscale(const uint8_t* rgba, uint8_t* result, int width, int height);
 void build_font_atlas(ImGuiIO& io);

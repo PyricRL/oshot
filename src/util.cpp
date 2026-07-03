@@ -211,7 +211,7 @@ void fit_to_screen(capture_result_t& img)
     bool ok = stbir_resize_uint8_linear(img.data.data(), img_w, img_h, 0, resized.data(), new_w, new_h, 0, STBIR_RGBA);
     if (!ok)
     {
-        warn("Failed to resize image: {}", STBI_ERROR);
+        spdlog::warn("Failed to resize image: {}", STBI_ERROR);
         return;
     }
 
@@ -714,14 +714,14 @@ void build_font_atlas(ImGuiIO& io)
         const fs::path& path = get_font_path(font);
         if (path.empty())
         {
-            warn("Font '{}' not found, skipping", font);
+            spdlog::warn("Font '{}' not found, skipping", font);
             continue;
         }
 
         ImFont* f = io.Fonts->AddFontFromFileTTF(path.string().c_str(), 16.0f, &font_cfg);
         if (!f)
         {
-            warn("Font '{}' failed to load", font);
+            spdlog::warn("Font '{}' failed to load", font);
             continue;
         }
 

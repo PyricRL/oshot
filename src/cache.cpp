@@ -27,11 +27,11 @@ Cache::Cache(const std::string& cache_dir) : m_cache_dir_path(cache_dir)
 {
     if (!fs::exists(cache_dir))
     {
-        warn("Oshot cache folder was not found. Creating folders at {}!", cache_dir);
+        spdlog::warn("Oshot cache folder was not found. Creating folders at {}!", cache_dir);
         fs::create_directories(cache_dir);
     }
 
-    MUST_OK(LoadCacheFile(), error("{}", _r.error_v()));
+    MUST_OK(LoadCacheFile(), spdlog::error("{}", _r.error_v()));
 }
 
 Cache::~Cache()

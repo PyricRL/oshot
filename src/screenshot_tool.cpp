@@ -2218,7 +2218,7 @@ void ScreenshotTool::DrawLogsWindow()
 {
     static std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> imgui_ring;
     if (!imgui_ring)
-        if (auto logger = spdlog::get("oshot_logger"))
+        if (auto logger = spdlog::default_logger())
             imgui_ring = std::dynamic_pointer_cast<spdlog::sinks::ringbuffer_sink_mt>(logger->sinks()[2]);
 
     if (!m_show_window.Has(SubWindow::Logs) || !imgui_ring)
@@ -2245,7 +2245,7 @@ void ScreenshotTool::DrawLogsWindow()
             case spdlog::level::info:     return "INFO";
             case spdlog::level::warn:     return "WARN";
             case spdlog::level::err:      return "ERROR";
-            case spdlog::level::critical: return "CRIT";
+            case spdlog::level::critical: return "CRITICAL";
             default:                      return "OFF";
         }
     };
@@ -2323,7 +2323,7 @@ void ScreenshotTool::DrawLogsWindow()
                 if (ImGui::BeginPopupContextItem(fmt::format("ctx##{}", i).c_str()))
                 {
                     if (ImGui::MenuItem("Copy line"))
-                        MUST_OK(g_clipboard.CopyText(msg.payload.data()), error("Failed to copy line log: {}", _r.error_v()));
+                        MUST_OK(g_clipboard.CopyText(msg.payload.data()), spdlog::error("Failed to copy line log: {}", _r.error_v()));
                     ImGui::EndPopup();
                 }
             }
@@ -2334,7 +2334,7 @@ void ScreenshotTool::DrawLogsWindow()
             std::string all_text;
             for (const auto* msg : shown)
                 all_text += fmt::format("[{}] {}\n", level_tag(msg->level), msg->payload);
-            MUST_OK(g_clipboard.CopyText(all_text), error("Failed to copy logs: {}", _r.error_v()));
+            MUST_OK(g_clipboard.CopyText(all_text), spdlog::error("Failed to copy logs: {}", _r.error_v()));
         }
 
         if (autoscroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f)

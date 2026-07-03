@@ -15,14 +15,14 @@ Config::Config(const fs::path& configFile, const fs::path& configDir)
 {
     if (!fs::exists(configDir))
     {
-        warn("Oshot config folder was not found, creating folders at {}!", configDir.string());
+        spdlog::warn("Oshot config folder was not found, creating folders at {}!", configDir.string());
         fs::create_directories(configDir);
         fs::create_directories(configDir / "models");
     }
 
     if (!fs::exists(configFile))
     {
-        warn("Config file {} not found, generating new one", configFile.string());
+        spdlog::warn("Config file {} not found, generating new one", configFile.string());
         GenerateConfig(configFile.string());
     }
 }
@@ -63,9 +63,9 @@ void Config::LoadConfigFile(const std::string& filename)
     File.allow_out_edit = GetValue<bool>("default.allow-edit-ocr", false);  // deprecated
     File.allow_out_edit = GetValue<bool>("default.allow-text-edit", File.allow_out_edit);
 
-    const char* tessdata_prefix;
-    if (!File.pref_conf_to_env && (tessdata_prefix = getenv("TESSDATA_PREFIX")))
-        File.ocr_path = tessdata_prefix;
+    const char* t;
+    if (!File.pref_conf_to_env && (t = getenv("TESSDATA_PREFIX")))
+        File.ocr_path = t;
 }
 
 void Config::LoadThemeFile(const std::string& filename)

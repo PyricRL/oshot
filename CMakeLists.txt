@@ -13,9 +13,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 
-set(CMAKE_CXX_VISIBILITY_PRESET hidden)
-set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
-
 # LTO helper
 function(enable_lto target)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -72,6 +69,18 @@ pkg_check_modules(TESSERACT REQUIRED tesseract)
 pkg_check_modules(LEPTONICA REQUIRED lept)
 pkg_check_modules(ZBAR REQUIRED zbar)
 
+# Homebrew's lept.pc points Cflags at .../include/leptonica directly (its
+# own convention is `#include <allheaders.h>`), but our code uses
+# `#include <leptonica/allheaders.h>`, which needs the parent dir on the
+# include path too. Add it defensively on every platform.
+message(STATUS "LEPTONICA_INCLUDE_DIRS before: ${LEPTONICA_INCLUDE_DIRS}")
+foreach(_lept_dir ${LEPTONICA_INCLUDE_DIRS})
+    get_filename_component(_lept_parent_dir "${_lept_dir}" DIRECTORY)
+    list(APPEND LEPTONICA_INCLUDE_DIRS "${_lept_parent_dir}")
+endforeach()
+list(REMOVE_DUPLICATES LEPTONICA_INCLUDE_DIRS)
+message(STATUS "LEPTONICA_INCLUDE_DIRS after: ${LEPTONICA_INCLUDE_DIRS}")
+
 if(UNIX AND NOT APPLE)
     find_package(X11 REQUIRED)
     pkg_check_modules(APPINDICATOR appindicator3-0.1)
@@ -111,7 +120,10 @@ target_compile_options(
         $<$<CONFIG:Debug>:-ggdb3;-fno-omit-frame-pointer;-Wall;-Wextra;-pedantic;-Wno-unused-parameter>
 )
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE VERSION="${PROJECT_VERSION}")
+target_compile_definitions(
+    ${PROJECT_NAME}
+    PRIVATE VERSION="${PROJECT_VERSION}" TOML_HEADER_ONLY=0
+)
 
 target_include_directories(
     ${PROJECT_NAME}
@@ -213,8 +225,6 @@ endif()
 set_target_properties(
     ${PROJECT_NAME}
     PROPERTIES
-        CXX_VISIBILITY_PRESET default
-        VISIBILITY_INLINES_HIDDEN OFF
         BUILD_RPATH "${_rpath_origin}/../lib;$<TARGET_FILE_DIR:imgui>"
         INSTALL_RPATH "${_rpath_origin}/../lib"
 )
@@ -222,25 +232,39 @@ set_target_properties(
 # -----------------------------
 # oshot's plugin library
 # -----------------------------
-add_library(oshot_plugin SHARED src/plugins/oshot_plugins.cpp)
+add_library(
+    oshot_plugin
+    SHARED
+    src/plugins/oshot_plugins.cpp
+    src/libs/toml++/toml.cpp
+)
 
 enable_lto(oshot_plugin)
 
-target_include_directories(oshot_plugin PUBLIC include/libs)
-target_include_directories(oshot_plugin PUBLIC include/)
+target_include_directories(oshot_plugin PUBLIC include/ include/libs)
+target_include_directories(
+    oshot_plugin
+    PRIVATE
+        ${TESSERACT_INCLUDE_DIRS}
+        ${LEPTONICA_INCLUDE_DIRS}
+        ${ZBAR_INCLUDE_DIRS}
+)
 target_compile_definitions(oshot_plugin PRIVATE VERSION="${PROJECT_VERSION}")
 target_compile_features(oshot_plugin PUBLIC cxx_std_20)
 
 target_link_libraries(oshot_plugin PUBLIC fmt)
+target_link_libraries(
+    oshot_plugin
+    PRIVATE
+        nvdialog
+        ${TESSERACT_LIBRARIES}
+        ${LEPTONICA_LIBRARIES}
+        ${ZBAR_LIBRARIES}
+)
 set_target_properties(
     oshot_plugin
-    PROPERTIES
-        CXX_VISIBILITY_PRESET default
-        VISIBILITY_INLINES_HIDDEN OFF
-        VERSION 1
-        SOVERSION 1
+    PROPERTIES VERSION 1 SOVERSION 1 WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
-
 
 target_link_libraries(${PROJECT_NAME} PRIVATE oshot_plugin)
 
@@ -255,6 +279,7 @@ enable_lto(fmt)
 target_include_directories(fmt PUBLIC include/libs)
 target_compile_features(fmt PUBLIC cxx_std_20)
 target_compile_definitions(fmt PUBLIC FMT_HEADER_ONLY=0)
+set_target_properties(fmt PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE fmt)
 
@@ -272,28 +297,26 @@ add_library(imgui SHARED ${IMGUI_SOURCES})
 enable_lto(imgui)
 
 target_include_directories(imgui PUBLIC include/libs/imgui)
-target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLAD IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+target_compile_definitions(
+    imgui
+    PUBLIC IMGUI_IMPL_OPENGL_LOADER_GLAD IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+)
 target_link_libraries(imgui PUBLIC ${GLFW_TARGET})
 
 if(APPLE)
     find_library(METAL_FRAMEWORK Metal REQUIRED)
     find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
     find_library(QUARTZCORE_FRAMEWORK QuartzCore REQUIRED)
-    target_link_libraries(imgui PUBLIC
-        ${METAL_FRAMEWORK}
-        ${FOUNDATION_FRAMEWORK}
-        ${QUARTZCORE_FRAMEWORK}
+    target_link_libraries(
+        imgui
+        PUBLIC
+            ${METAL_FRAMEWORK}
+            ${FOUNDATION_FRAMEWORK}
+            ${QUARTZCORE_FRAMEWORK}
     )
 endif()
 
-set_target_properties(
-    imgui
-    PROPERTIES
-        CXX_VISIBILITY_PRESET default
-        VISIBILITY_INLINES_HIDDEN OFF
-        VERSION 1.92.9
-        SOVERSION 1
-)
+set_target_properties(imgui PROPERTIES VERSION 1.92.9 SOVERSION 1)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE imgui)
 
@@ -305,14 +328,7 @@ add_library(cimgui SHARED src/libs/cimgui/cimgui.cpp)
 
 target_include_directories(cimgui PUBLIC include/libs include/libs/cimgui)
 target_link_libraries(cimgui PUBLIC imgui)
-set_target_properties(
-    cimgui
-    PROPERTIES
-        CXX_VISIBILITY_PRESET default
-        VISIBILITY_INLINES_HIDDEN OFF
-        VERSION 1
-        SOVERSION 1
-)
+set_target_properties(cimgui PROPERTIES VERSION 1 SOVERSION 1)
 
 # -----------------------------
 # Tray library (integrated from its own CMakeLists.txt)
@@ -465,12 +481,15 @@ target_include_directories(
     PRIVATE src/libs/nvdialog/impl/
 )
 
-set_target_properties(nvdialog PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+set_target_properties(
+    nvdialog
+    PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON
+)
 
 if(WIN32)
     target_link_libraries(
         nvdialog
-        PRIVATE comdlg32 shell32 user32 gdi32 ole32
+        PUBLIC comdlg32 shell32 user32 gdi32 ole32
     )
 elseif(APPLE)
     target_compile_definitions(nvdialog PRIVATE NVD_USE_COCOA=1)
@@ -558,10 +577,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE tiny-process-library)
 # Install
 # -----------------------------
 
-add_dependencies(${PROJECT_NAME} cimgui imgui)
+add_dependencies(${PROJECT_NAME} cimgui imgui oshot_plugin)
 
 install(
-    TARGETS ${PROJECT_NAME} imgui cimgui
+    TARGETS ${PROJECT_NAME} imgui cimgui oshot_plugin
     RUNTIME DESTINATION bin COMPONENT runtime
     LIBRARY DESTINATION lib COMPONENT runtime
 )

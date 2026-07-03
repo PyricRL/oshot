@@ -28,13 +28,13 @@ void load_plugins()
 
                 if (!plugin || plugin->abi_version != oshot_get_abi_version())
                 {
-                    spdlog::critical("Plugin '{}' has incompatible ABI version, skipping", entry.path().stem().string());
+                    spdlog::error("Plugin '{}' has incompatible ABI version, skipping", entry.path().stem().string());
                     continue;
                 }
 
                 if (!plugin->render || !plugin->id || !plugin->name || plugin->name[0] == '\0')
                 {
-                    spdlog::critical("Plugin '{}' doesn't define name/ID or render function", entry.path().stem().string());
+                    spdlog::error("Plugin '{}' doesn't define name/ID or render function", entry.path().stem().string());
                     continue;
                 }
 
@@ -43,7 +43,7 @@ void load_plugins()
                         return (isalnum(c) || c == '-' || c == '_' || c == '=' || c == '.');
                     }))
                 {
-                    spdlog::critical("Plugin '{}' has an invalid ID", plugin->id);
+                    spdlog::error("Plugin '{}' has an invalid ID", plugin->id);
                     continue;
                 }
 
@@ -51,7 +51,7 @@ void load_plugins()
                         return (isalnum(c) || c == '-' || c == '_' || c == '=' || c == ' ');
                     }))
                 {
-                    spdlog::critical("Plugin '{}' contains chars other than -_= or alpha numerical", plugin->id);
+                    spdlog::error("Plugin '{}' contains chars other than -_= or alpha numerical", plugin->id);
                     continue;
                 }
 

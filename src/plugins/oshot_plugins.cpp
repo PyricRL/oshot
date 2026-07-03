@@ -57,14 +57,14 @@ void oshot_debug(oshot_str_t str)
     oshot_log(OSLogLevel::OSHOT_LOG_DEBUG, std::move(str));
 }
 
-void oshot_log_s(OSLogLevel lvl, const char* str)
+void oshot_logs(OSLogLevel lvl, const char* str)
 {
     oshot_str_t s = oshot_str_new(str, strlen(str));
     oshot_log(lvl, s);
     oshot_str_free(&s);
 }
 
-void oshot_debug_s(const char* str)
+void oshot_debugs(const char* str)
 {
     oshot_str_t s = oshot_str_new(str, strlen(str));
     oshot_debug(s);

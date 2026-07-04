@@ -34,9 +34,8 @@ public:
      * @param fallback Default value if couldn't retrive value
      */
     template <typename T>
-    T GetValue(CacheEntry e, const T& fallback, bool dont_expand_var = false)
+    T GetValue(const std::string_view key, const T& fallback, bool dont_expand_var = false)
     {
-        const std::string&      key = m_cache_entries.at(e);
         const std::optional<T>& ret = m_tbl["cache"][key].value<T>();
         if constexpr (toml::is_string<T>)
             if (!dont_expand_var)
@@ -48,14 +47,24 @@ public:
     }
 
     /**
+     * Get value of a cache variables
+     * @param value The cache variable "path" (e.g "cache.source-path")
+     * @param fallback Default value if couldn't retrive value
+     */
+    template <typename T>
+    T GetValue(CacheEntry e, const T& fallback, bool dont_expand_var = false)
+    {
+        return GetValue<T>(m_cache_entries.at(e), fallback, dont_expand_var);
+    }
+
+    /**
      * Set value of a cache variables
      * @param path The cache variable "path" (e.g "cache.source-path")
      */
     template <typename T>
-    void SetValue(CacheEntry e, const T& value)
+    void SetValue(const std::string_view key, const T& value)
     {
-        const std::string& key     = m_cache_entries.at(e);
-        auto*              section = m_tbl["cache"].as_table();
+        auto* section = m_tbl["cache"].as_table();
         if (!section)
         {
             m_tbl.insert_or_assign("cache", toml::table{});
@@ -64,13 +73,23 @@ public:
         section->insert_or_assign(key, value);
     }
 
+    /**
+     * Set value of a cache variables
+     * @param path The cache variable "path" (e.g "cache.source-path")
+     */
+    template <typename T>
+    void SetValue(CacheEntry e, const T& value)
+    {
+        SetValue<T>(m_cache_entries.at(e), value);
+    }
+
 private:
     static constexpr const char* mk_file_path = "cache.toml";
 
     std::string m_cache_dir_path;
     toml::table m_tbl;
 
-    std::unordered_map<CacheEntry, std::string> m_cache_entries = {
+    const std::unordered_map<CacheEntry, std::string> m_cache_entries = {
         { CacheEntry::AnnColor, "default-color-picker-color" },
         { CacheEntry::ImgSavePath, "last-saved-dir" },
     };

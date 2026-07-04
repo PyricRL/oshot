@@ -98,6 +98,9 @@ bool     oshot_get_plugin_data_dir(oshot_str_t* ret);
 oshot_str_t oshot_str_new(const char* str, size_t n);
 void        oshot_str_free(oshot_str_t* str);
 
+// Only frees OSHOT_VAL_STRING members
+void oshot_value_array_free(oshot_value_t* arr, size_t n);
+
 /* ------------------------------------------------------------------
  * Logging / host messaging
  * ------------------------------------------------------------------ */
@@ -114,12 +117,17 @@ void oshot_debugs(const char* str);  // oshot_log(DEBUG, str);
 oshot_str_t oshot_config_get_string(const char* key, oshot_str_t fallback);
 bool        oshot_config_get_bool(const char* key, bool fallback);
 int64_t     oshot_config_get_int64(const char* key, int64_t fallback);
-float       oshot_config_get_float(const char* key, float fallback);
 double      oshot_config_get_double(const char* key, double fallback);
 size_t      oshot_config_get_array(const char* key, oshot_value_t** out, size_t max);
 
-// Only frees OSHOT_VAL_STRING members
-void oshot_value_array_free(oshot_value_t* arr, size_t n);
+/* ------------------------------------------------------------------
+ * Cache (plugin namespace only)
+ * ------------------------------------------------------------------ */
+oshot_str_t oshot_cache_get_string(const char* key, oshot_str_t fallback);
+bool        oshot_cache_get_bool(const char* key, bool fallback);
+int64_t     oshot_cache_get_int64(const char* key, int64_t fallback);
+double      oshot_cache_get_double(const char* key, double fallback);
+size_t      oshot_cache_get_array(const char* key, oshot_value_t** out, size_t max);
 
 /* ------------------------------------------------------------------
  * ImGui-bound text buffers

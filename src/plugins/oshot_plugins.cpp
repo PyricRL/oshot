@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cstring>
 
+#include "cache.hpp"
 #include "config.hpp"
 #include "fmt/chrono.h"
 #include "fmt/format.h"
@@ -35,6 +36,13 @@ void oshot_str_free(oshot_str_t* str)
     free((void*)str->p);
     str->p   = nullptr;
     str->len = 0;
+}
+
+void oshot_value_array_free(oshot_value_t* arr, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        if (arr[i].kind == OSValueKind::OSHOT_VAL_STRING)
+            oshot_str_free(&arr[i].s);
 }
 
 /* ------------------------------------------------------------------
@@ -74,35 +82,31 @@ void oshot_debugs(const char* str)
 /* ------------------------------------------------------------------
  * Config
  * ------------------------------------------------------------------ */
+template <typename T>
+static T get_config_value(const char* key, T fallback)
+{
+    return g_config->GetValue<T>(g_current_plugin->config_prefix + key, fallback);
+}
+
 oshot_str_t oshot_config_get_string(const char* key, oshot_str_t fallback)
 {
-    const std::string& str =
-        g_config->GetValue<std::string>(g_current_plugin->config_prefix + key, std::string(fallback.p, fallback.len));
+    const std::string& str = get_config_value(key, std::string(fallback.p, fallback.len));
     return oshot_str_new(str.c_str(), str.length());
 }
 
 bool oshot_config_get_bool(const char* key, bool fallback)
 {
-    bool val = g_config->GetValue<bool>(g_current_plugin->config_prefix + key, fallback);
-    return val;
+    return get_config_value<bool>(key, fallback);
 }
 
 int64_t oshot_config_get_int64(const char* key, int64_t fallback)
 {
-    int64_t val = g_config->GetValue<int64_t>(g_current_plugin->config_prefix + key, fallback);
-    return val;
+    return get_config_value<int64_t>(key, fallback);
 }
 
-float oshot_config_get_float(const char* key, float fallback)
+double oshot_config_get_double(const char* key, float fallback)
 {
-    float val = g_config->GetValue<float>(g_current_plugin->config_prefix + key, fallback);
-    return val;
-}
-
-double oshot_config_get_double(const char* key, double fallback)
-{
-    double val = g_config->GetValue<double>(g_current_plugin->config_prefix + key, fallback);
-    return val;
+    return get_config_value<double>(key, fallback);
 }
 
 size_t oshot_config_get_array(const char* key, oshot_value_t** out, size_t max)
@@ -148,11 +152,34 @@ size_t oshot_config_get_array(const char* key, oshot_value_t** out, size_t max)
     return i;
 }
 
-void oshot_value_array_free(oshot_value_t* arr, size_t n)
+/* ------------------------------------------------------------------
+ * Cache
+ * ------------------------------------------------------------------ */
+template <typename T>
+static T get_cache_value(const char* key, T fallback)
 {
-    for (size_t i = 0; i < n; ++i)
-        if (arr[i].kind == OSValueKind::OSHOT_VAL_STRING)
-            oshot_str_free(&arr[i].s);
+    return g_cache->GetValue<T>(g_current_plugin->config_prefix + key, fallback);
+}
+
+oshot_str_t oshot_cache_get_string(const char* key, oshot_str_t fallback)
+{
+    const std::string& str = get_cache_value(key, std::string(fallback.p, fallback.len));
+    return oshot_str_new(str.c_str(), str.length());
+}
+
+bool oshot_cache_get_bool(const char* key, bool fallback)
+{
+    return get_cache_value<bool>(key, fallback);
+}
+
+int64_t oshot_cache_get_int64(const char* key, int64_t fallback)
+{
+    return get_cache_value<int64_t>(key, fallback);
+}
+
+double oshot_cache_get_double(const char* key, float fallback)
+{
+    return get_cache_value<double>(key, fallback);
 }
 
 /* ------------------------------------------------------------------
@@ -179,9 +206,9 @@ void oshot_set_text(const char* imgui_id, const oshot_str_t value)
     auto& t  = g_ss_tool.GetImGuiIDTexts();
     auto  it = t.find(imgui_id);
     if (it == t.end())
-        return;  // unknown id -- nothing registered to write into
+        return;  // unknown id
 
-    it->second->assign(value.p, value.len);  // mutate the live buffer, no temporaries
+    it->second->assign(value.p, value.len);
 }
 
 /* ------------------------------------------------------------------

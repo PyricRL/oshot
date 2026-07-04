@@ -83,6 +83,8 @@ public:
         SetValue<T>(m_cache_entries.at(e), value);
     }
 
+    const toml::array* GetValueArray(const std::string_view value) const { return m_tbl.at_path(value).as_array(); }
+
 private:
     static constexpr const char* mk_file_path = "cache.toml";
 

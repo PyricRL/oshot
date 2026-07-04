@@ -120,6 +120,16 @@ int64_t     oshot_config_get_int64(const char* key, int64_t fallback);
 double      oshot_config_get_double(const char* key, double fallback);
 size_t      oshot_config_get_array(const char* key, oshot_value_t** out, size_t max);
 
+void oshot_config_set_string(const char* key, const oshot_str_t* val);
+void oshot_config_set_bool(const char* key, bool val);
+void oshot_config_set_int64(const char* key, int64_t val);
+void oshot_config_set_double(const char* key, double val);
+
+// Only for forwarding an already-typed value (e.g. writing back an
+// oshot_value_t pulled from get_array). not the primary plugin-facing API.
+oshot_value_t oshot_config_get_value(const char* key, oshot_value_t fallback);
+void          oshot_config_set_value(const char* key, const oshot_value_t* val);
+
 /* ------------------------------------------------------------------
  * Cache (plugin namespace only)
  * ------------------------------------------------------------------ */
@@ -128,6 +138,16 @@ bool        oshot_cache_get_bool(const char* key, bool fallback);
 int64_t     oshot_cache_get_int64(const char* key, int64_t fallback);
 double      oshot_cache_get_double(const char* key, double fallback);
 size_t      oshot_cache_get_array(const char* key, oshot_value_t** out, size_t max);
+
+void oshot_cache_set_string(const char* key, const oshot_str_t* val);
+void oshot_cache_set_bool(const char* key, bool val);
+void oshot_cache_set_int64(const char* key, int64_t val);
+void oshot_cache_set_double(const char* key, double val);
+
+// Only for forwarding an already-typed value (e.g. writing back an
+// oshot_value_t pulled from get_array). not the primary plugin-facing API.
+oshot_value_t oshot_cache_get_value(const char* key, oshot_value_t fallback);
+void          oshot_cache_set_value(const char* key, const oshot_value_t* val);
 
 /* ------------------------------------------------------------------
  * ImGui-bound text buffers

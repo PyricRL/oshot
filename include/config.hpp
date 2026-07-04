@@ -164,6 +164,37 @@ public:
     }
 
     /**
+     * Set value of a config variables
+     * @param path The config variable "path" (e.g "cache.source-path")
+     */
+    template <typename T>
+    void SetValue(const std::string_view key, const T& value)
+    {
+        toml::table* section = &m_tbl;
+        size_t       start   = 0;
+
+        for (;;)
+        {
+            size_t dot = key.find('.', start);
+            if (dot == key.npos)
+            {
+                section->insert_or_assign(key.substr(start), value);
+                return;
+            }
+
+            const std::string_view part = key.substr(start, dot - start);
+            auto*                  next = section->get(part);
+            if (!next || !next->is_table())
+            {
+                section->insert_or_assign(part, toml::table{});
+                next = section->get(part);
+            }
+            section = next->as_table();
+            start   = dot + 1;
+        }
+    }
+
+    /**
      * Get value of config variables
      * @param value The config variable "path" (e.g "config.source-path")
      * @param fallback Default value if couldn't retrive value

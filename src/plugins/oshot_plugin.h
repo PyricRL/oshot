@@ -7,6 +7,7 @@ extern "C" {
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #define OSHOT_API_VERSION 1u
 
@@ -98,18 +99,22 @@ bool     oshot_get_plugin_data_dir(oshot_str_t* ret);
 oshot_str_t oshot_str_new(const char* str, size_t n);
 void        oshot_str_free(oshot_str_t* str);
 
+static inline oshot_str_t oshot_str_borrow(const char* s)
+{
+    return (oshot_str_t){ s, s ? strlen(s) : 0 };
+}
+
 // Only frees OSHOT_VAL_STRING members
 void oshot_value_array_free(oshot_value_t* arr, size_t n);
 
 /* ------------------------------------------------------------------
- * Logging / host messaging
+ * Logging
  * ------------------------------------------------------------------ */
 void oshot_log(OSLogLevel lvl, oshot_str_t str);
 void oshot_debug(oshot_str_t str);  // oshot_log(DEBUG, str);
-
-// convinience ig
-void oshot_logs(OSLogLevel lvl, const char* str);
-void oshot_debugs(const char* str);  // oshot_log(DEBUG, str);
+void oshot_error(oshot_str_t str);  // oshot_log(ERROR, str);
+void oshot_warn(oshot_str_t str);   // oshot_log(WARN, str);
+void oshot_info(oshot_str_t str);   // oshot_log(INFO, str);
 
 /* ------------------------------------------------------------------
  * Config (plugin namespace only)
@@ -120,7 +125,7 @@ int64_t     oshot_config_get_int64(const char* key, int64_t fallback);
 double      oshot_config_get_double(const char* key, double fallback);
 size_t      oshot_config_get_array(const char* key, oshot_value_t** out, size_t max);
 
-void oshot_config_set_string(const char* key, const oshot_str_t* val);
+void oshot_config_set_string(const char* key, oshot_str_t val);
 void oshot_config_set_bool(const char* key, bool val);
 void oshot_config_set_int64(const char* key, int64_t val);
 void oshot_config_set_double(const char* key, double val);
@@ -139,7 +144,7 @@ int64_t     oshot_cache_get_int64(const char* key, int64_t fallback);
 double      oshot_cache_get_double(const char* key, double fallback);
 size_t      oshot_cache_get_array(const char* key, oshot_value_t** out, size_t max);
 
-void oshot_cache_set_string(const char* key, const oshot_str_t* val);
+void oshot_cache_set_string(const char* key, oshot_str_t val);
 void oshot_cache_set_bool(const char* key, bool val);
 void oshot_cache_set_int64(const char* key, int64_t val);
 void oshot_cache_set_double(const char* key, double val);

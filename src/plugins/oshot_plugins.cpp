@@ -1,5 +1,3 @@
-#include <cstring>
-
 #include "cache.hpp"
 #include "config.hpp"
 #include "fmt/format.h"
@@ -107,21 +105,22 @@ void oshot_log(const OSLogLevel lvl, oshot_str_t str)
 
 void oshot_debug(oshot_str_t str)
 {
-    oshot_log(OSLogLevel::OSHOT_LOG_DEBUG, std::move(str));
+    oshot_log(OSLogLevel::OSHOT_LOG_DEBUG, str);
 }
 
-void oshot_logs(OSLogLevel lvl, const char* str)
+void oshot_error(oshot_str_t str)
 {
-    oshot_str_t s = oshot_str_new(str, strlen(str));
-    oshot_log(lvl, s);
-    oshot_str_free(&s);
+    oshot_log(OSLogLevel::OSHOT_LOG_ERROR, str);
 }
 
-void oshot_debugs(const char* str)
+void oshot_warn(oshot_str_t str)
 {
-    oshot_str_t s = oshot_str_new(str, strlen(str));
-    oshot_debug(s);
-    oshot_str_free(&s);
+    oshot_log(OSLogLevel::OSHOT_LOG_WARN, str);
+}
+
+void oshot_info(oshot_str_t str)
+{
+    oshot_log(OSLogLevel::OSHOT_LOG_INFO, str);
 }
 
 /* ------------------------------------------------------------------
@@ -172,9 +171,9 @@ static void set_config_value(const char* key, T val)
     g_config->SetValue<T>(prefixed_key(key), val);
 }
 
-void oshot_config_set_string(const char* key, const oshot_str_t* val)
+void oshot_config_set_string(const char* key, oshot_str_t val)
 {
-    set_config_value(key, std::string(val->p, val->len));
+    set_config_value(key, std::string(val.p, val.len));
 }
 
 void oshot_config_set_bool(const char* key, bool val)
@@ -196,7 +195,7 @@ void oshot_config_set_value(const char* key, const oshot_value_t* val)
 {
     if (val->kind < OSHOT_VAL_STRING || val->kind > OSHOT_VAL_DOUBLE)
     {
-        oshot_logs(OSLogLevel::OSHOT_LOG_ERROR, "Failed to set config value: unknown kind");
+        oshot_log(OSLogLevel::OSHOT_LOG_ERROR, oshot_str_borrow("Failed to set config value: unknown kind"));
         return;
     }
 
@@ -204,7 +203,8 @@ void oshot_config_set_value(const char* key, const oshot_value_t* val)
     {
         case OSValueKind::OSHOT_VAL_STRING:
             if (!val->s.p)
-                oshot_logs(OSLogLevel::OSHOT_LOG_ERROR, "Failed to set config value: string has null pointer");
+                oshot_log(OSLogLevel::OSHOT_LOG_ERROR,
+                          oshot_str_borrow("Failed to set config value: string has null pointer"));
             else
                 g_config->SetValue<std::string>(prefixed_key(key), std::string(val->s.p, val->s.len));
             break;
@@ -265,9 +265,9 @@ static void set_cache_value(const char* key, T val)
     g_cache->SetValue<T>(prefixed_key(key), val);
 }
 
-void oshot_cache_set_string(const char* key, const oshot_str_t* val)
+void oshot_cache_set_string(const char* key, oshot_str_t val)
 {
-    set_cache_value(key, std::string(val->p, val->len));
+    set_cache_value(key, std::string(val.p, val.len));
 }
 
 void oshot_cache_set_bool(const char* key, bool val)
@@ -289,7 +289,7 @@ void oshot_cache_set_value(const char* key, const oshot_value_t* val)
 {
     if (val->kind < OSHOT_VAL_STRING || val->kind > OSHOT_VAL_DOUBLE)
     {
-        oshot_logs(OSLogLevel::OSHOT_LOG_ERROR, "Failed to set cache value: unknown kind");
+        oshot_log(OSLogLevel::OSHOT_LOG_ERROR, oshot_str_borrow("Failed to set cache value: unknown kind"));
         return;
     }
 
@@ -297,7 +297,8 @@ void oshot_cache_set_value(const char* key, const oshot_value_t* val)
     {
         case OSValueKind::OSHOT_VAL_STRING:
             if (!val->s.p)
-                oshot_logs(OSLogLevel::OSHOT_LOG_ERROR, "Failed to set cache value: string has null pointer");
+                oshot_log(OSLogLevel::OSHOT_LOG_ERROR,
+                          oshot_str_borrow("Failed to set cache value: string has null pointer"));
             else
                 g_cache->SetValue<std::string>(prefixed_key(key), std::string(val->s.p, val->s.len));
             break;

@@ -27,6 +27,9 @@ function(enable_lto target)
             PRIVATE $<$<CONFIG:Release>:-flto=auto;-ffat-lto-objects>
         )
         target_link_options(${target} PRIVATE $<$<CONFIG:Release>:-flto=auto>)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+        target_compile_options(${target} PRIVATE $<$<CONFIG:Release>:-flto>)
+        target_link_options(${target} PRIVATE $<$<CONFIG:Release>:-flto>)
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         target_compile_options(
             ${target}
@@ -117,19 +120,19 @@ add_executable(
 )
 enable_lto(${PROJECT_NAME})
 
-execute_process(
-    COMMAND ./scripts/generateVersion.sh
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version.h
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generateVersion.sh
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    RESULT_VARIABLE OSHOT_VERSION_SCRIPT_RESULT
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generateVersion.sh
+    COMMENT "Generating version header"
 )
-if(NOT OSHOT_VERSION_SCRIPT_RESULT EQUAL 0)
-    message(
-        WARNING
-        "scripts/generateVersion.sh failed or is unavailable "
-        "(exit ${OSHOT_VERSION_SCRIPT_RESULT}); generated version info may be stale or missing. "
-        "Note this script also won't run on a native Windows shell without sh on PATH (e.g. Git Bash/MSYS)."
-    )
-endif()
+add_custom_target(
+    generate_version
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/version.h
+)
+add_dependencies(${PROJECT_NAME} generate_version)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 if(OSHOT_OPTION_DEFINITIONS)
     target_compile_definitions(
@@ -142,10 +145,12 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CONFIG:Debug>:DEBUG=1>)
 target_compile_options(
     ${PROJECT_NAME}
     PRIVATE
-        $<$<CONFIG:Debug>:-ggdb3;-fno-omit-frame-pointer;-Wall;-Wextra;-pedantic;-Wno-unused-parameter>
+        -Wall
+        -Wextra
+        -pedantic
+        -Wno-unused-parameter
+        $<$<CONFIG:Debug>:-ggdb3;-fno-omit-frame-pointer>
 )
-
-add_dependencies(${PROJECT_NAME} oshot_common oshot_plugin)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE oshot_common oshot_plugin)
 
@@ -267,10 +272,7 @@ target_compile_definitions(
 # PkgConfig::LEPTONICA's own interface include dirs don't have.
 target_include_directories(
     oshot_common
-    PUBLIC
-        include/
-        include/libs
-        ${LEPTONICA_INCLUDE_DIRS}
+    PUBLIC include/ include/libs ${LEPTONICA_INCLUDE_DIRS}
 )
 
 target_compile_features(oshot_common PUBLIC cxx_std_20)
@@ -280,18 +282,17 @@ target_compile_features(oshot_common PUBLIC cxx_std_20)
 # -----------------------------
 add_library(oshot_plugin SHARED src/plugins/oshot_plugins.cpp)
 
-add_dependencies(oshot_plugin oshot_common)
-
-target_include_directories(oshot_plugin PUBLIC include/ include/libs)
-
 target_compile_features(oshot_plugin PUBLIC cxx_std_20)
 
 target_link_libraries(oshot_plugin PUBLIC oshot_common)
 
-# Everything else is inherited from oshot_common
 set_target_properties(
     oshot_plugin
-    PROPERTIES VERSION 1 SOVERSION 1 WINDOWS_EXPORT_ALL_SYMBOLS ON
+    PROPERTIES
+        VERSION 1
+        SOVERSION 1
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+        POSITION_INDEPENDENT_CODE ON
 )
 
 # -----------------------------
@@ -339,7 +340,14 @@ if(APPLE)
     )
 endif()
 
-set_target_properties(imgui PROPERTIES VERSION 1.92.9 SOVERSION 1)
+set_target_properties(
+    imgui
+    PROPERTIES
+        VERSION 1.92.9
+        SOVERSION 1
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+        POSITION_INDEPENDENT_CODE ON
+)
 
 # -----------------------------
 # cimgui library (C-ABI plugins only)
@@ -349,7 +357,14 @@ add_library(cimgui SHARED src/libs/cimgui/cimgui.cpp)
 
 target_include_directories(cimgui PUBLIC include/libs include/libs/cimgui)
 target_link_libraries(cimgui PUBLIC imgui)
-set_target_properties(cimgui PROPERTIES VERSION 1 SOVERSION 1)
+set_target_properties(
+    cimgui
+    PROPERTIES
+        VERSION 1
+        SOVERSION 1
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+        POSITION_INDEPENDENT_CODE ON
+)
 
 # -----------------------------
 # Tray library (integrated from its own CMakeLists.txt)
@@ -360,7 +375,7 @@ if(WIN32)
 else()
     if(UNIX)
         if(APPLE)
-            find_library(COCOA Cocoa REQUIRED)
+            find_library(COCOA_FRAMEWORK Cocoa REQUIRED)
             list(APPEND TRAY_SOURCES src/libs/tray/tray_darwin.mm)
         else()
             list(APPEND TRAY_SOURCES src/libs/tray/tray_linux.cpp)
@@ -375,12 +390,11 @@ if(WIN32)
         tray
         PRIVATE TRAY_WINAPI=1 WIN32_LEAN_AND_MEAN NOMINMAX
     )
-    #target_compile_options(tray PRIVATE "/MT$<$<CONFIG:Debug>:d>")
 else()
     if(UNIX)
         if(APPLE)
             target_compile_definitions(tray PRIVATE TRAY_APPKIT=1)
-            target_link_libraries(tray PRIVATE ${COCOA})
+            target_link_libraries(tray PRIVATE ${COCOA_FRAMEWORK})
         else()
             target_compile_options(
                 tray
@@ -449,7 +463,7 @@ file(GLOB DYLIB_SOURCES src/libs/dylib/*.cpp)
 add_library(dylib STATIC ${DYLIB_SOURCES})
 
 if(UNIX)
-    target_link_libraries(dylib PRIVATE dl)
+    target_link_libraries(dylib PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
 target_include_directories(dylib PUBLIC include/libs/)
@@ -484,10 +498,7 @@ target_include_directories(
     PRIVATE src/libs/nvdialog/impl/
 )
 
-set_target_properties(
-    nvdialog
-    PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON
-)
+set_target_properties(nvdialog PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
 
 if(WIN32)
     target_link_libraries(
@@ -576,23 +587,20 @@ enable_lto(tiny-process-library)
 # Install
 # -----------------------------
 
-add_dependencies(${PROJECT_NAME} cimgui imgui oshot_plugin)
+include(GNUInstallDirs)
 
 install(
     TARGETS ${PROJECT_NAME} imgui cimgui oshot_plugin
-    RUNTIME DESTINATION bin COMPONENT runtime
-    LIBRARY DESTINATION lib COMPONENT runtime
-    ARCHIVE DESTINATION lib COMPONENT runtime
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
 install(
     FILES LICENSE
-    DESTINATION share/licenses/${PROJECT_NAME}
-    COMPONENT documentation
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/licenses/${PROJECT_NAME}
 )
 
 install(
     FILES oshot.desktop
-    DESTINATION share/applications
-    COMPONENT documentation
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications
 )

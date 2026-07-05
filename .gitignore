@@ -3,6 +3,7 @@
 /oshot_r
 /locale/
 /include/version.h
+/*.patch
 
 AppDir
 *.AppImage

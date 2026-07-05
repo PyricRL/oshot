@@ -75,7 +75,7 @@ void load_plugins()
                     it->second.state = plugin->init();
                 }
 
-                info("loading plugin at {}!", entry.path().string());
+                spdlog::info("loading plugin at {}!", entry.path().string());
             }
             catch (const dylib::load_error& e)
             {

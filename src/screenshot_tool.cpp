@@ -29,8 +29,13 @@
 #include "imgui/imgui_impl_opengl3_loader.h"
 #include "imgui/imgui_internal.h"
 #include "imgui/imgui_stdlib.h"
-#include "plugin.hpp"
-#include "plugins/oshot_plugin.h"
+#ifndef DISABLE_PLUGINS
+#  include "plugin.hpp"
+#  include "plugins/oshot_plugin.h"
+#else
+#  define OCR_OUTPUT  "ocr_output"
+#  define ZBAR_OUTPUT "barcode_output"
+#endif
 #include "screen_capture.hpp"
 #include "spdlog/sinks/ringbuffer_sink.h"
 #include "tiny-process-library/process.hpp"
@@ -339,8 +344,10 @@ Result<> ScreenshotTool::Start()
 
 Result<> ScreenshotTool::StartWindow()
 {
+#ifndef DISABLE_PLUGINS
     static std::once_flag plugins_loaded;
     std::call_once(plugins_loaded, [] { load_plugins(); });
+#endif
 
     m_inputs = { g_config->File.ocr_path,
                  g_config->File.ocr_model,
@@ -471,6 +478,7 @@ void ScreenshotTool::RenderOverlay()
         DrawLogsWindow();
         DrawOcrTools();
         DrawBarDecodeTools();
+#ifndef DISABLE_PLUGINS
         for (auto& [_, entry] : g_plugins)
         {
             oshot_plugin_t* plugin = entry.plugin;
@@ -491,6 +499,7 @@ void ScreenshotTool::RenderOverlay()
                 ImGui::PopID();
             }
         }
+#endif
         ImGui::End();
     }
     m_show_window.Set(SubWindow::MainTextTools, open);
@@ -1268,6 +1277,12 @@ void ScreenshotTool::DrawMenuItems()
         ImGui::Text("%s", text_display.data());
         ImGui::Spacing();
 
+#ifdef DISABLE_PLUGINS
+        text_display = centered_text("!!! NO PLUGINS SUPPORT !!!");
+        ImGui::TextColored(get_confidence_color(0), "%s", text_display.data());
+        ImGui::Spacing();
+#endif
+
         // More version details
         text_display = "More Details:";
         if (ImGui::TreeNode(text_display.data()))
@@ -1391,6 +1406,7 @@ void ScreenshotTool::DrawOcrTools()
                 {
                     ClearError(ectx, OcrError::FailedToScan);
                     m_inputs.ocr_results = std::move(result.get());
+#ifndef DISABLE_PLUGINS
                     if (!g_plugins.empty())
                     {
                         oshot_ocr_result_t ocr{
@@ -1408,6 +1424,7 @@ void ScreenshotTool::DrawOcrTools()
                         }
                         oshot_str_free(&ocr.text);
                     }
+#endif
                 }
                 else
                 {

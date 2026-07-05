@@ -1,9 +1,10 @@
 #pragma once
 
-#include <unordered_map>
+#ifndef DISABLE_PLUGINS
+#  include <unordered_map>
 
-#include "../src/plugins/oshot_plugin.h"
-#include "dylib.hpp"
+#  include "../src/plugins/oshot_plugin.h"
+#  include "dylib.hpp"
 
 struct plugin_runtime_t;
 
@@ -57,3 +58,5 @@ struct plugin_runtime_t
 };
 
 void load_plugins();
+
+#endif

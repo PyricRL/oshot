@@ -52,7 +52,7 @@ macro(add_option OPTION_NAME OPTION_TEXT OPTION_DEFAULT DEFINE_OPTION)
         # Allow overriding the option through an environment variable
         set(${OPTION_NAME} $ENV{${OPTION_NAME}})
     endif()
-    if(${OPTION_NAME} AND DEFINE_OPTION)
+    if(${OPTION_NAME} AND ${DEFINE_OPTION})
         list(APPEND OSHOT_OPTION_DEFINITIONS ${OPTION_NAME}=1)
     endif()
     message(STATUS "  ${OPTION_NAME}: ${${OPTION_NAME}}")
@@ -60,11 +60,11 @@ endmacro()
 
 # Options
 add_option(WINDOWS_CMD "Enable terminal support on Windows" OFF OFF)
+add_option(DISABLE_PLUGINS "Disable plugins support" ON ON)
 
 # -----------------------------
 # Dependencies
 # -----------------------------
-
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 find_package(glfw3 REQUIRED)
@@ -111,7 +111,6 @@ endif()
 # -----------------------------
 # Main executable
 # -----------------------------
-
 add_executable(
     ${PROJECT_NAME}
     src/main.cpp
@@ -134,13 +133,6 @@ add_custom_target(
 add_dependencies(${PROJECT_NAME} generate_version)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
-if(OSHOT_OPTION_DEFINITIONS)
-    target_compile_definitions(
-        ${PROJECT_NAME}
-        PRIVATE ${OSHOT_OPTION_DEFINITIONS}
-    )
-endif()
-
 target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CONFIG:Debug>:DEBUG=1>)
 target_compile_options(
     ${PROJECT_NAME}
@@ -152,7 +144,10 @@ target_compile_options(
         $<$<CONFIG:Debug>:-ggdb3;-fno-omit-frame-pointer>
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE oshot_common oshot_plugin)
+target_link_libraries(${PROJECT_NAME} PRIVATE oshot_common)
+if(NOT DISABLE_PLUGINS)
+    target_link_libraries(${PROJECT_NAME} PRIVATE oshot_plugin)
+endif()
 
 if(WIN32 AND NOT WINDOWS_CMD)
     set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
@@ -182,7 +177,6 @@ add_library(
     src/clipboard.cpp
     src/config.cpp
     src/globals.cpp
-    src/plugins.cpp
     src/screen_capture.cpp
     src/screenshot_tool.cpp
     src/text_extraction.cpp
@@ -190,6 +184,14 @@ add_library(
     src/libs/toml++/toml.cpp
     src/libs/tinyfiledialogs/tinyfiledialogs.c
 )
+
+if(OSHOT_OPTION_DEFINITIONS)
+    target_compile_definitions(oshot_common PUBLIC ${OSHOT_OPTION_DEFINITIONS})
+endif()
+
+if(NOT DISABLE_PLUGINS)
+    target_sources(oshot_common PRIVATE src/plugins.cpp)
+endif()
 
 enable_lto(oshot_common)
 
@@ -249,7 +251,6 @@ target_link_libraries(
         imgui
         tray
         clip
-        dylib
         nvdialog
         tiny-process-library
         PkgConfig::TESSERACT
@@ -259,6 +260,10 @@ target_link_libraries(
         ${GLFW_TARGET}
     PRIVATE Threads::Threads
 )
+if(NOT DISABLE_PLUGINS)
+    target_link_libraries(oshot_common PUBLIC dylib)
+endif()
+
 target_compile_definitions(
     oshot_common
     PUBLIC VERSION="${PROJECT_VERSION}" TOML_HEADER_ONLY=0
@@ -280,20 +285,22 @@ target_compile_features(oshot_common PUBLIC cxx_std_20)
 # -----------------------------
 # oshot's plugin library
 # -----------------------------
-add_library(oshot_plugin SHARED src/plugins/oshot_plugins.cpp)
+if(NOT DISABLE_PLUGINS)
+    add_library(oshot_plugin SHARED src/plugins/oshot_plugins.cpp)
 
-target_compile_features(oshot_plugin PUBLIC cxx_std_20)
+    target_compile_features(oshot_plugin PUBLIC cxx_std_20)
 
-target_link_libraries(oshot_plugin PUBLIC oshot_common)
+    target_link_libraries(oshot_plugin PUBLIC oshot_common)
 
-set_target_properties(
-    oshot_plugin
-    PROPERTIES
-        VERSION 1
-        SOVERSION 1
-        WINDOWS_EXPORT_ALL_SYMBOLS ON
-        POSITION_INDEPENDENT_CODE ON
-)
+    set_target_properties(
+        oshot_plugin
+        PROPERTIES
+            VERSION 1
+            SOVERSION 1
+            WINDOWS_EXPORT_ALL_SYMBOLS ON
+            POSITION_INDEPENDENT_CODE ON
+    )
+endif()
 
 # -----------------------------
 # fmt library
@@ -316,7 +323,11 @@ if(APPLE)
     list(APPEND IMGUI_SOURCES src/libs/imgui/imgui_impl_metal.mm)
 endif()
 
-add_library(imgui SHARED ${IMGUI_SOURCES})
+if(DISABLE_PLUGINS)
+    add_library(imgui STATIC ${IMGUI_SOURCES})
+else()
+    add_library(imgui SHARED ${IMGUI_SOURCES})
+endif()
 
 enable_lto(imgui)
 
@@ -340,31 +351,35 @@ if(APPLE)
     )
 endif()
 
-set_target_properties(
-    imgui
-    PROPERTIES
-        VERSION 1.92.9
-        SOVERSION 1
-        WINDOWS_EXPORT_ALL_SYMBOLS ON
-        POSITION_INDEPENDENT_CODE ON
-)
+if(NOT DISABLE_PLUGINS)
+    set_target_properties(
+        imgui
+        PROPERTIES
+            VERSION 1.92.9
+            SOVERSION 1
+            WINDOWS_EXPORT_ALL_SYMBOLS ON
+            POSITION_INDEPENDENT_CODE ON
+    )
+endif()
 
 # -----------------------------
 # cimgui library (C-ABI plugins only)
 # -----------------------------
 
-add_library(cimgui SHARED src/libs/cimgui/cimgui.cpp)
+if(NOT DISABLE_PLUGINS)
+    add_library(cimgui SHARED src/libs/cimgui/cimgui.cpp)
 
-target_include_directories(cimgui PUBLIC include/libs include/libs/cimgui)
-target_link_libraries(cimgui PUBLIC imgui)
-set_target_properties(
-    cimgui
-    PROPERTIES
-        VERSION 1
-        SOVERSION 1
-        WINDOWS_EXPORT_ALL_SYMBOLS ON
-        POSITION_INDEPENDENT_CODE ON
-)
+    target_include_directories(cimgui PUBLIC include/libs include/libs/cimgui)
+    target_link_libraries(cimgui PUBLIC imgui)
+    set_target_properties(
+        cimgui
+        PROPERTIES
+            VERSION 1
+            SOVERSION 1
+            WINDOWS_EXPORT_ALL_SYMBOLS ON
+            POSITION_INDEPENDENT_CODE ON
+    )
+endif()
 
 # -----------------------------
 # Tray library (integrated from its own CMakeLists.txt)
@@ -459,15 +474,17 @@ target_compile_definitions(clip PUBLIC CLIP_ENABLE_IMAGE=1)
 # dylib library (integrated from its own CMakeLists.txt)
 # -----------------------------
 
-file(GLOB DYLIB_SOURCES src/libs/dylib/*.cpp)
-add_library(dylib STATIC ${DYLIB_SOURCES})
+if(NOT DISABLE_PLUGINS)
+    file(GLOB DYLIB_SOURCES src/libs/dylib/*.cpp)
+    add_library(dylib STATIC ${DYLIB_SOURCES})
 
-if(UNIX)
-    target_link_libraries(dylib PRIVATE ${CMAKE_DL_LIBS})
+    if(UNIX)
+        target_link_libraries(dylib PRIVATE ${CMAKE_DL_LIBS})
+    endif()
+
+    target_include_directories(dylib PUBLIC include/libs/)
+    target_compile_features(dylib PRIVATE cxx_std_20)
 endif()
-
-target_include_directories(dylib PUBLIC include/libs/)
-target_compile_features(dylib PRIVATE cxx_std_20)
 
 # -----------------------------
 # nvdialog (integrated from its own CMakeLists.txt)
@@ -589,11 +606,15 @@ enable_lto(tiny-process-library)
 
 include(GNUInstallDirs)
 
-install(
-    TARGETS ${PROJECT_NAME} imgui cimgui oshot_plugin
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-)
+if(DISABLE_PLUGINS)
+    install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+else()
+    install(
+        TARGETS ${PROJECT_NAME} imgui cimgui oshot_plugin
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+endif()
 
 install(
     FILES LICENSE

@@ -1,5 +1,7 @@
-#include "plugin.hpp"
-#include "util.hpp"
+#ifndef DISABLE_PLUGINS
+
+#  include "plugin.hpp"
+#  include "util.hpp"
 
 void load_plugins()
 {
@@ -88,3 +90,5 @@ void load_plugins()
         }
     }
 }
+
+#endif

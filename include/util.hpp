@@ -258,6 +258,9 @@ static inline const std::string version_infos = fmt::format(
     "oshot v{} built from branch '{}' at {} commit '{}' ({}).\n"
     "Date: {}\n"
     "Tag: {}\n",
+#ifdef DISABLE_PLUGINS
+    "NO PLUGINS SUPPORT",
+#endif
     VERSION,
     GIT_BRANCH,
     GIT_DIRTY,

@@ -77,6 +77,9 @@ enum class PrefTab
 {
     kNone    = -1,
     Defaults = 0,
+#ifndef DISABLE_PLUGINS
+    Plugins,
+#endif
     Theme
 };
 

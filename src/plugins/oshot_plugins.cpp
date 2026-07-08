@@ -61,6 +61,15 @@ uint32_t oshot_get_abi_version()
     return OSHOT_API_VERSION;
 }
 
+oshot_str_t oshot_get_plugin_data_dir()
+{
+    const fs::path& p = g_current_plugin->data_dir;
+    if (!fs::exists(p))
+        return oshot_str_borrow(NULL);
+
+    return oshot_str_new(p.string().c_str(), p.string().length());
+}
+
 /* ------------------------------------------------------------------
  * oshot_str_t lifecycle
  * ------------------------------------------------------------------ */

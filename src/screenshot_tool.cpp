@@ -489,7 +489,7 @@ void ScreenshotTool::RenderOverlay()
             {
                 ImGui::PushID(plugin->id);
 
-                // auto-height, or let plugins set a preferred height
+                // auto-height
                 ImGui::BeginChild(plugin->name, ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders);
 
                 ScopedActivePlugin _(&entry);
@@ -1967,6 +1967,41 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
     }
 }
 
+#ifndef DISABLE_PLUGINS
+static void draw_preference_plugin(auto& plugin_dirty, bool& prefs_modified)
+{
+    ImGui::Text("Edit settings per plugin");
+    ImGui::Spacing();
+
+    for (auto& [id, rt] : g_plugins)
+    {
+        oshot_plugin_t* pl = rt.plugin;
+        if (!pl->render_preferences)
+        {
+            spdlog::warn("Plugin '{}' doesn't have a render_preferences() function. Skipping", pl->id);
+            continue;
+        }
+        ScopedActivePlugin _(&rt);
+
+        ImGui::PushID(pl->id);
+        ImGui::SeparatorText(fmt::format("{} ({})", pl->name, pl->id).c_str());
+        ImGui::Spacing();
+
+        ImGui::BeginChild(pl->name, ImVec2(0.0f, 0.0f), ImGuiWindowFlags_AlwaysAutoResize);
+        if (pl->render_preferences(rt.state))
+        {
+            plugin_dirty[id] = true;
+            prefs_modified   = true;
+        }
+        ImGui::EndChild();
+
+        ImGui::PopID();
+
+        ImGui::Spacing();
+    }
+}
+#endif
+
 static void draw_theme_editor()
 {
     Config::theme_overrides_t& ov = g_config->theme_overrides;
@@ -2057,7 +2092,11 @@ static void draw_theme_editor()
 
 void ScreenshotTool::DrawPreferencesWindow()
 {
-    static constexpr const char* items[2] = { "Defaults", "Theme" };
+#ifndef DISABLE_PLUGINS
+    static constexpr const char* items[] = { "Defaults", "Plugins", "Theme" };
+#else
+    static constexpr const char* items[] = { "Defaults", "Theme" };
+#endif
 
     static bool    prefs_modified     = false;
     static bool    prev_window_open   = false;
@@ -2065,8 +2104,9 @@ void ScreenshotTool::DrawPreferencesWindow()
     const bool     window_just_opened = !prev_window_open;
     static PrefTab selected_tab       = PrefTab::Defaults;
 
-    static Config::config_file_t     config_snapshot;  // config state at the moment the window opened
-    static Config::theme_overrides_t theme_snapshot;   // theme state at the moment the window opened
+    static Config::config_file_t                 config_snapshot;  // config state at the moment the window opened
+    static Config::theme_overrides_t             theme_snapshot;   // theme state at the moment the window opened
+    static std::unordered_map<std::string, bool> plugin_dirty;
 
     if (!m_show_window.Has(SubWindow::Preferences))
     {
@@ -2077,45 +2117,61 @@ void ScreenshotTool::DrawPreferencesWindow()
     prev_window_open = true;
 
     auto save_current_tab = [&]() {
-        switch (selected_tab)
+        if (config_snapshot != g_config->File)
         {
-            case PrefTab::kNone: break;
-            case PrefTab::Defaults:
-                g_config->GenerateConfig(g_config->GetConfigPath(), true);
-                g_config->LoadConfigFile(g_config->GetConfigPath());
-                SyncRuntimeFromConfig();
-                if (!g_config->File.theme_file_path.empty())
-                    g_config->LoadThemeFile(g_config->File.theme_file_path);
-                apply_imgui_theme();
-                config_snapshot = g_config->File;
-                theme_snapshot  = g_config->theme_overrides;
-                break;
-
-            case PrefTab::Theme:
-                if (!g_config->File.theme_file_path.empty())
-                {
-                    g_config->GenerateTheme(g_config->File.theme_file_path, true);
-                    g_config->LoadThemeFile(g_config->File.theme_file_path);
-                    color_name_map().clear();
-                }
-                else
-                {
-                    ImGui::OpenPopup("Theme file path is empty##theme_filepath_empty");
-                }
-
-                apply_imgui_theme();
-                theme_snapshot = g_config->theme_overrides;
-                break;
+            g_config->GenerateConfig(g_config->GetConfigPath(), true);
+            g_config->LoadConfigFile(g_config->GetConfigPath());
+            SyncRuntimeFromConfig();
+            if (!g_config->File.theme_file_path.empty())
+                g_config->LoadThemeFile(g_config->File.theme_file_path);
+            apply_imgui_theme();
+            config_snapshot = g_config->File;
+            theme_snapshot  = g_config->theme_overrides;
         }
+
+        if (theme_snapshot != g_config->theme_overrides)
+        {
+            if (!g_config->File.theme_file_path.empty())
+            {
+                g_config->GenerateTheme(g_config->File.theme_file_path, true);
+                g_config->LoadThemeFile(g_config->File.theme_file_path);
+                color_name_map().clear();
+            }
+            else
+            {
+                ImGui::OpenPopup("Theme file path is empty##theme_filepath_empty");
+            }
+
+            apply_imgui_theme();
+            theme_snapshot = g_config->theme_overrides;
+        }
+
+#ifndef DISABLE_PLUGINS
+        for (auto& [id, rt] : g_plugins)
+        {
+            if (!plugin_dirty[id] || !rt.plugin->on_save_preferences)
+                continue;
+
+            ScopedActivePlugin _(&rt);
+            rt.plugin->on_save_preferences(rt.state);
+            plugin_dirty[id] = false;
+        }
+#endif
     };
 
     auto discard_current_tab = [&]() {
-        switch (selected_tab)
+        g_config->File            = config_snapshot;
+        g_config->theme_overrides = theme_snapshot;
+#ifndef DISABLE_PLUGINS
+        for (auto& [id, rt] : g_plugins)
         {
-            case PrefTab::kNone:    break;
-            case PrefTab::Defaults: g_config->File = config_snapshot; break;
-            case PrefTab::Theme:    g_config->theme_overrides = theme_snapshot; break;
+            if (!plugin_dirty[id] || !rt.plugin->on_discard_preferences)
+                continue;
+            ScopedActivePlugin _(&rt);
+            rt.plugin->on_discard_preferences(rt.state);
+            plugin_dirty[id] = false;
         }
+#endif
     };
 
     // Snapshot the config when the window first appears so Discard can restore it.
@@ -2161,6 +2217,9 @@ void ScreenshotTool::DrawPreferencesWindow()
         {
             case PrefTab::kNone:    break;
             case PrefTab::Defaults: draw_preference_edit_config([&] { RefreshOcrModels(); }, window_just_opened); break;
+#ifndef DISABLE_PLUGINS
+            case PrefTab::Plugins:  draw_preference_plugin(plugin_dirty, prefs_modified); break;
+#endif
             case PrefTab::Theme:    draw_theme_editor(); break;
         }
         ImGui::EndChild();

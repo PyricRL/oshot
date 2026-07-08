@@ -8,15 +8,16 @@
 
 CMAKE       ?= cmake
 PREFIX      ?= /usr
-DEBUG       ?= 0
-WINDOWS_CMD ?= 0
-JOBS        := $(shell echo $(MAKEFLAGS) | grep -oP '(?<=-j)\d+')
-JOBS        ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+JOBS        := $(shell echo $(MAKEFLAGS) | grep -oP '(?<=-j)\d+' || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 NAME       := oshot
 VERSION    := 0.4.6
 OLDVERSION := 0.4.5
 TARGET     ?= $(NAME)
+
+DEBUG           ?= 0
+WINDOWS_CMD     ?= 0
+DISABLE_PLUGINS ?= 0
 
 ifeq ($(DEBUG),1)
     BUILDDIR   := build/debug
@@ -30,6 +31,7 @@ CMAKE_CONFIGURE_FLAGS := \
     -S . -B $(BUILDDIR) \
     -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
     -DWINDOWS_CMD=$(WINDOWS_CMD) \
+    -DDISABLE_PLUGINS=$(DISABLE_PLUGINS) \
     -DCMAKE_INSTALL_PREFIX=$(PREFIX)
 
 .PHONY: all configure build clean distclean dist genver updatever install

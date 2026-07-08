@@ -84,14 +84,19 @@ typedef struct
     void* (*init)(void);
     void (*destroy)(void* state);
     void (*render)(void* state);
+
     void (*on_ocr_done)(void* state, const oshot_ocr_result_t* result);
+
+    bool (*render_preferences)(void* state);
+    void (*on_save_preferences)(void* state);
+    void (*on_discard_preferences)(void* state);
 } oshot_plugin_t;
 
 /* ------------------------------------------------------------------
  * ABI / identity
  * ------------------------------------------------------------------ */
-uint32_t oshot_get_abi_version(void);
-bool     oshot_get_plugin_data_dir(oshot_str_t* ret);
+uint32_t    oshot_get_abi_version(void);
+oshot_str_t oshot_get_plugin_data_dir(void);
 
 /* ------------------------------------------------------------------
  * oshot_str_t lifecycle

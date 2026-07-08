@@ -12,6 +12,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+add_compile_options($<$<CONFIG:Debug>:-fsanitize=address>)
+add_compile_options($<$<CONFIG:Debug>:-fno-omit-frame-pointer>)
+add_link_options($<$<CONFIG:Debug>:-fsanitize=address>)
+
 # GCC/Clang default Release flags already include -O3; this just makes it
 # explicit. Guarded because "-O3" is not a valid cl.exe switch and would
 # otherwise spam D9002 (or hard-fail under /WX) on MSVC builds.
@@ -42,7 +46,7 @@ endfunction()
 # https://github.com/libcpr/cpr/blob/5f475522597b8f3721e2440daddeced7a969f24c/CMakeLists.txt#L39
 # NOTE: definitions are collected into OSHOT_OPTION_DEFINITIONS instead of
 # using add_definitions(), which is directory-scoped and would otherwise leak
-# into every target declared afterward -- including vendored third-party
+# into every target declared afterward - including vendored third-party
 # libs (fmt, imgui, tray, clip, dylib, nvdialog, tiny-process-library).
 # They're applied to just ${PROJECT_NAME} once it exists (see below).
 set(OSHOT_OPTION_DEFINITIONS "")
@@ -59,8 +63,8 @@ macro(add_option OPTION_NAME OPTION_TEXT OPTION_DEFAULT DEFINE_OPTION)
 endmacro()
 
 # Options
-add_option(WINDOWS_CMD "Enable terminal support on Windows" OFF OFF)
-add_option(DISABLE_PLUGINS "Disable plugins support" ON ON)
+add_option(WINDOWS_CMD "Enable terminal support on Windows" OFF ON)
+add_option(DISABLE_PLUGINS "Disable plugins support" OFF ON)
 
 # -----------------------------
 # Dependencies
@@ -87,7 +91,7 @@ pkg_check_modules(ZBAR REQUIRED IMPORTED_TARGET zbar)
 # Homebrew's lept.pc points Cflags at .../include/leptonica directly (its
 # own convention is `#include <allheaders.h>`), but our code uses
 # `#include <leptonica/allheaders.h>`, which needs the parent dir on the
-# include path too. Add it defensively on every platform.
+# include path too.
 message(STATUS "LEPTONICA_INCLUDE_DIRS before: ${LEPTONICA_INCLUDE_DIRS}")
 foreach(_lept_dir ${LEPTONICA_INCLUDE_DIRS})
     get_filename_component(_lept_parent_dir "${_lept_dir}" DIRECTORY)
@@ -144,13 +148,23 @@ target_compile_options(
         $<$<CONFIG:Debug>:-ggdb3;-fno-omit-frame-pointer>
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE oshot_common)
+# oshot_plugin PUBLIC-links oshot_common (see below), so linking oshot_plugin
+# alone pulls in oshot_common's usage requirements transitively. This is
+# deliberate: it ensures oshot and oshot_plugin.so resolve globals.cpp's
+# externs (g_ss_tool, g_config, g_cache, g_plugins, g_current_plugin, ...)
+# to the same symbols at the same address.
 if(NOT DISABLE_PLUGINS)
     target_link_libraries(${PROJECT_NAME} PRIVATE oshot_plugin)
+else()
+    target_link_libraries(${PROJECT_NAME} PRIVATE oshot_common)
 endif()
 
 if(WIN32 AND NOT WINDOWS_CMD)
     set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+
+if(UNIX AND NOT APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE X11::X11)
 endif()
 
 if(APPLE)
@@ -271,7 +285,7 @@ target_compile_definitions(
 
 # NOTE: PkgConfig::TESSERACT / PkgConfig::ZBAR already propagate their own
 # include dirs, link dirs, and compile options as usage requirements via
-# target_link_libraries() above -- no need to add TESSERACT_*/ZBAR_* here too.
+# target_link_libraries() above.
 # LEPTONICA_INCLUDE_DIRS is the one exception: it was patched earlier in this
 # file to add the parent directory for Homebrew's lept.pc convention, which
 # PkgConfig::LEPTONICA's own interface include dirs don't have.

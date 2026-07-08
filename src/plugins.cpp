@@ -1,5 +1,6 @@
 #ifndef DISABLE_PLUGINS
 
+#  include "fmt/std.h"
 #  include "plugin.hpp"
 #  include "util.hpp"
 
@@ -19,25 +20,35 @@ void load_plugins()
         for (const auto& entry :
              fs::directory_iterator(plugin_dir.path(), fs::directory_options::skip_permission_denied))
         {
-            if (entry.path().filename() != expected)
+            const fs::path& path = entry.path();
+
+            if (!path.has_extension() || path.extension().string() != dylib::decorations::os_default().suffix)
                 continue;
+
+            if (path.filename().string() != expected)
+            {
+                spdlog::warn("Found plugin filename '{}' at {}, expected '{}'. Skipping",
+                             path.filename(),
+                             path.parent_path().string(),
+                             expected);
+                continue;
+            }
 
             try
             {
-                dylib::library  lib(entry.path().string());
+                dylib::library  lib(path.string());
                 auto            oshot_get_plugin = lib.get_function<oshot_plugin_t*(void)>("oshot_host_get_plugin");
                 oshot_plugin_t* plugin           = oshot_get_plugin();
 
                 if (!plugin || plugin->abi_version != oshot_get_abi_version())
                 {
-                    spdlog::error("Plugin '{}' has incompatible ABI version, skipping", entry.path().stem().string());
+                    spdlog::error("Plugin '{}' has incompatible ABI version, skipping", path.stem().string());
                     continue;
                 }
 
                 if (!plugin->render || !plugin->id || !plugin->name || plugin->name[0] == '\0')
                 {
-                    spdlog::error("Plugin '{}' doesn't define name/ID or render function",
-                                  entry.path().stem().string());
+                    spdlog::error("Plugin '{}' doesn't define name/ID or render function", path.stem().string());
                     continue;
                 }
 
@@ -54,7 +65,9 @@ void load_plugins()
                         return (isalnum(c) || c == '-' || c == '_' || c == '=' || c == ' ');
                     }))
                 {
-                    spdlog::error("Plugin '{}' contains chars other than -_= or alpha numerical", plugin->id);
+                    spdlog::error("Plugin name '{}' in '{}' contains chars other than -_= or alpha numerical",
+                                  plugin->name,
+                                  plugin->id);
                     continue;
                 }
 
@@ -77,11 +90,11 @@ void load_plugins()
                     it->second.state = plugin->init();
                 }
 
-                spdlog::info("loading plugin at {}!", entry.path().string());
+                spdlog::info("loading plugin at {}!", path.string());
             }
             catch (const dylib::load_error& e)
             {
-                spdlog::error("Failed to load '{}' library: {}", entry.path().stem().string(), e.what());
+                spdlog::error("Failed to load '{}' library: {}", path.stem().string(), e.what());
             }
             catch (const dylib::symbol_error& e)
             {

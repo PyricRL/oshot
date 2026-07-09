@@ -71,13 +71,25 @@ void load_plugins()
                     continue;
                 }
 
+                fs::path plugin_config_dir  = get_config_dir() / "plugins" / plugin->id;
+                fs::path plugin_config_path = plugin_config_dir / "config.toml";
+
+                fs::create_directories(plugin_config_dir);
+
+                TomlAPI toml_api;
+                if (!fs::exists(plugin_config_path))
+                    std::ofstream(plugin_config_path).close();
+                toml_api.LoadFile(plugin_config_path);
+
                 auto [it, inserted] = g_plugins.try_emplace(plugin->id,
                                                             plugin->id,
                                                             fmt::format("plugins.{}.", plugin->id),
-                                                            get_config_dir() / "plugins" / plugin->id,
+                                                            std::move(plugin_config_dir),
                                                             plugin,
                                                             nullptr,  // state filled in below
-                                                            std::move(lib));
+                                                            std::move(lib),
+                                                            std::move(toml_api),
+                                                            std::move(plugin_config_path));
                 if (!inserted)
                 {
                     spdlog::warn("Duplicate plugin '{}'", plugin->id);

@@ -1,6 +1,5 @@
 #include "config.hpp"
 
-#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -29,20 +28,7 @@ Config::Config(const fs::path& configFile, const fs::path& configDir)
 
 void Config::LoadConfigFile(const std::string& filename)
 {
-    try
-    {
-        m_tbl = toml::parse_file(filename);
-    }
-    catch (const toml::parse_error& err)
-    {
-        die("Parsing config file '{}' failed:\n"
-            "{}\n"
-            "\t(error occurred at line {} column {})",
-            filename,
-            err.description(),
-            err.source().begin.line,
-            err.source().begin.column);
-    }
+    LoadFile(filename);
 
     File.ocr_path         = GetValue<std::string>("default.ocr-path", File.ocr_path);
     File.ocr_get_repo     = GetValue<std::string>("default.ocr-repo-downlaod", "tesseract-ocr/tessdata");
@@ -71,7 +57,6 @@ void Config::LoadConfigFile(const std::string& filename)
 void Config::LoadThemeFile(const std::string& filename)
 {
     m_theme_path    = filename;
-    m_theme_tbl     = {};
     theme_overrides = {};
     theme_overrides.colors.clear();
 
@@ -82,24 +67,12 @@ void Config::LoadThemeFile(const std::string& filename)
 
     if (fs::exists(filename))
     {
-        try
-        {
-            m_theme_tbl = toml::parse_file(filename);
-        }
-        catch (const toml::parse_error& err)
-        {
-            die("Parsing theme file '{}' failed:\n"
-                "{}\n"
-                "\t(error occurred at line {} column {})",
-                filename,
-                err.description(),
-                err.source().begin.line,
-                err.source().begin.column);
-        }
+        m_theme.LoadFile(filename);
+        m_theme_path = filename;
     }
 
     theme_overrides_t& ov = theme_overrides;
-    if (const toml::table* colors = m_theme_tbl.at_path("theme.colors").as_table())
+    if (const toml::table* colors = m_theme.GetTbl().at_path("theme.colors").as_table())
     {
         colors->for_each(
             [&](const toml::key& k, const toml::value<std::string>& v) { ov.colors[std::string(k.str())] = v.get(); });
@@ -113,34 +86,6 @@ void Config::LoadThemeFile(const std::string& filename)
     ov.frame_border    = GetThemeStyleValue("frame-border", -1.f);
 
     ov.smooth_animations = GetThemeValue("smooth-animations", false);
-}
-
-void Config::OverrideOption(const std::string& opt)
-{
-    const size_t pos = opt.find('=');
-    if (pos == std::string::npos)
-        die("Option to override '{}' doesn't have an equal sign '=' for separating name and value\n"
-            "See --help for more information",
-            opt);
-
-    std::string        name{ opt.substr(0, pos) };
-    const std::string& value = opt.substr(pos + 1);
-
-    // usually the user finds incovinient to write "default.foo"
-    // for general config options
-    if (name.find('.') == name.npos)
-        name.insert(0, "default.");
-
-    if (value == "true")
-        m_overrides[name] = { .value_type = ValueType::kBool, .bool_value = true };
-    else if (value == "false")
-        m_overrides[name] = { .value_type = ValueType::kBool, .bool_value = false };
-    else if ((value[0] == '"' && value.back() == '"') || (value[0] == '\'' && value.back() == '\''))
-        m_overrides[name] = { .value_type = ValueType::kString, .string_value = value.substr(1, value.size() - 2) };
-    else if (std::ranges::all_of(value, ::isdigit))
-        m_overrides[name] = { .value_type = ValueType::kInt, .int_value = std::stoi(value) };
-    else
-        die("looks like override value '{}' from '{}' is neither a bool, int or string value", value, name);
 }
 
 void Config::GenerateConfig(const std::string& filename, const bool force)

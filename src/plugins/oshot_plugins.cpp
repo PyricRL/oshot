@@ -1,5 +1,4 @@
 #include "cache.hpp"
-#include "config.hpp"
 #include "fmt/format.h"
 #include "oshot_plugin.h"
 #include "plugin.hpp"
@@ -51,6 +50,29 @@ static size_t toml_get_array(const toml::array* arr, oshot_value_t** out, size_t
 static std::string prefixed_key(const char* key)
 {
     return g_current_plugin->config_prefix + key;
+}
+
+static void set_toml_value(TomlAPI* api, const char* key, const oshot_value_t* val)
+{
+    if (val->kind < OSHOT_VAL_STRING || val->kind > OSHOT_VAL_DOUBLE)
+    {
+        oshot_error(oshot_str_borrow("Failed to set toml value: unknown kind"));
+        return;
+    }
+
+    switch (val->kind)
+    {
+        case OSValueKind::OSHOT_VAL_STRING:
+            if (!val->s.p)
+                oshot_error(oshot_str_borrow("Failed to set toml value: string has null pointer"));
+            else
+                api->SetValue<std::string>(key, std::string(val->s.p, val->s.len));
+            break;
+
+        case OSValueKind::OSHOT_VAL_INT64:  api->SetValue<int64_t>(key, val->i); break;
+        case OSValueKind::OSHOT_VAL_DOUBLE: api->SetValue<double>(key, val->d); break;
+        case OSValueKind::OSHOT_VAL_BOOL:   api->SetValue<bool>(key, val->b); break;
+    }
 }
 
 /* ------------------------------------------------------------------
@@ -142,7 +164,7 @@ void oshot_info(oshot_str_t str)
 template <typename T>
 static T get_config_value(const char* key, T fallback)
 {
-    return g_config->GetValue<T>(prefixed_key(key), fallback);
+    return g_current_plugin->config.GetValue(key, fallback);
 }
 
 oshot_str_t oshot_config_get_string(const char* key, oshot_str_t fallback)
@@ -168,7 +190,7 @@ double oshot_config_get_double(const char* key, double fallback)
 
 size_t oshot_config_get_array(const char* key, oshot_value_t** out, size_t max)
 {
-    return toml_get_array(g_config->GetValueArray(prefixed_key(key)), out, max);
+    return toml_get_array(g_current_plugin->config.GetValueArray(key), out, max);
 }
 
 // ---------------------
@@ -177,7 +199,7 @@ size_t oshot_config_get_array(const char* key, oshot_value_t** out, size_t max)
 template <typename T>
 static void set_config_value(const char* key, T val)
 {
-    g_config->SetValue<T>(prefixed_key(key), val);
+    g_current_plugin->config.SetValue(key, val);
 }
 
 void oshot_config_set_string(const char* key, oshot_str_t val)
@@ -202,28 +224,7 @@ void oshot_config_set_double(const char* key, double val)
 
 void oshot_config_set_value(const char* key, const oshot_value_t* val)
 {
-    if (val->kind < OSHOT_VAL_STRING || val->kind > OSHOT_VAL_DOUBLE)
-    {
-        oshot_log(OSLogLevel::OSHOT_LOG_ERROR, oshot_str_borrow("Failed to set config value: unknown kind"));
-        return;
-    }
-
-    switch (val->kind)
-    {
-        case OSValueKind::OSHOT_VAL_STRING:
-            if (!val->s.p)
-                oshot_log(OSLogLevel::OSHOT_LOG_ERROR,
-                          oshot_str_borrow("Failed to set config value: string has null pointer"));
-            else
-                g_config->SetValue<std::string>(prefixed_key(key), std::string(val->s.p, val->s.len));
-            break;
-
-        case OSValueKind::OSHOT_VAL_INT64: g_config->SetValue<int64_t>(prefixed_key(key), val->i); break;
-
-        case OSValueKind::OSHOT_VAL_DOUBLE: g_config->SetValue<double>(prefixed_key(key), val->d); break;
-
-        case OSValueKind::OSHOT_VAL_BOOL: g_config->SetValue<bool>(prefixed_key(key), val->b); break;
-    }
+    set_toml_value(&g_current_plugin->config, key, val);
 }
 
 /* ------------------------------------------------------------------
@@ -296,28 +297,7 @@ void oshot_cache_set_double(const char* key, double val)
 
 void oshot_cache_set_value(const char* key, const oshot_value_t* val)
 {
-    if (val->kind < OSHOT_VAL_STRING || val->kind > OSHOT_VAL_DOUBLE)
-    {
-        oshot_log(OSLogLevel::OSHOT_LOG_ERROR, oshot_str_borrow("Failed to set cache value: unknown kind"));
-        return;
-    }
-
-    switch (val->kind)
-    {
-        case OSValueKind::OSHOT_VAL_STRING:
-            if (!val->s.p)
-                oshot_log(OSLogLevel::OSHOT_LOG_ERROR,
-                          oshot_str_borrow("Failed to set cache value: string has null pointer"));
-            else
-                g_cache->SetValue<std::string>(prefixed_key(key), std::string(val->s.p, val->s.len));
-            break;
-
-        case OSValueKind::OSHOT_VAL_INT64: g_cache->SetValue<int64_t>(prefixed_key(key), val->i); break;
-
-        case OSValueKind::OSHOT_VAL_DOUBLE: g_cache->SetValue<double>(prefixed_key(key), val->d); break;
-
-        case OSValueKind::OSHOT_VAL_BOOL: g_cache->SetValue<bool>(prefixed_key(key), val->b); break;
-    }
+    set_toml_value(g_cache.get(), prefixed_key(key).c_str(), val);
 }
 
 /* ------------------------------------------------------------------

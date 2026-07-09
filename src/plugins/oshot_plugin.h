@@ -95,7 +95,13 @@ typedef struct
 /* ------------------------------------------------------------------
  * ABI / identity
  * ------------------------------------------------------------------ */
-uint32_t    oshot_get_abi_version(void);
+uint32_t oshot_get_abi_version(void);
+
+/* Returns an owned oshot_str_t (caller must oshot_str_free it) pointing
+ * to this plugin's private data directory, e.g.
+ * ~/.config/oshot/plugins/<id>/
+ * The host guarantees this directory exists by the time any plugin
+ * callback can run. Created at plugin-load time, before init(). */
 oshot_str_t oshot_get_plugin_data_dir(void);
 
 /* ------------------------------------------------------------------
@@ -122,7 +128,13 @@ void oshot_warn(oshot_str_t str);   // oshot_log(WARN, str);
 void oshot_info(oshot_str_t str);   // oshot_log(INFO, str);
 
 /* ------------------------------------------------------------------
- * Config (plugin namespace only)
+ * Config (optional convenience helper)
+ *
+ * These functions persist plugin config as TOML, in a file the host
+ * manages on your behalf. You are not required to use them, if you
+ * prefer JSON, YAML, or anything else, ignore this section entirely
+ * and read/write your own file under the path returned by
+ * oshot_get_plugin_data_dir(), using whatever library you like.
  * ------------------------------------------------------------------ */
 oshot_str_t oshot_config_get_string(const char* key, oshot_str_t fallback);
 bool        oshot_config_get_bool(const char* key, bool fallback);

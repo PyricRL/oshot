@@ -3,32 +3,13 @@
 
 #include <filesystem>
 #include <memory>
-#include <type_traits>
 #include <unordered_map>
 
 #include "fmt/format.h"
+#include "toml_api.hpp"
 #include "util.hpp"
 
-#define TOML_HEADER_ONLY 0
-#include "toml++/toml.hpp"
-
-enum class ValueType
-{
-    kNone,
-    kString,
-    kBool,
-    kInt
-};
-
-struct override_config_value_t
-{
-    ValueType   value_type   = ValueType::kNone;
-    std::string string_value = "";
-    bool        bool_value   = false;
-    int         int_value    = 0;
-};
-
-class Config
+class Config : public TomlAPI
 {
 public:
     // Create .config directories and files and load the config file (args or default)
@@ -47,19 +28,20 @@ public:
 #else
         std::string ocr_path = "./models";
 #endif
-        std::string              ocr_get_repo     = "tesseract-ocr/tessdata";
-        std::string              ocr_model        = "eng";
-        std::string              theme_style      = "auto";
-        std::string              theme_file_path  = "theme.toml";
-        std::string              image_out_fmt    = "oshot_{:%F_%H-%M}";
-        int                      delay            = 0;
-        bool                     allow_out_edit   = false;
-        bool                     real_full_screen = false;
-        bool                     show_text_tools  = true;
-        bool                     enable_vsync     = true;
-        bool                     render_anns      = true;
-        bool                     pref_conf_to_env = false;
-        bool                     ctrl_c_copy_img  = true;
+        std::string ocr_get_repo     = "tesseract-ocr/tessdata";
+        std::string ocr_model        = "eng";
+        std::string theme_style      = "auto";
+        std::string theme_file_path  = "theme.toml";
+        std::string image_out_fmt    = "oshot_{:%F_%H-%M}";
+        int         delay            = 0;
+        bool        allow_out_edit   = false;
+        bool        real_full_screen = false;
+        bool        show_text_tools  = true;
+        bool        enable_vsync     = true;
+        bool        render_anns      = true;
+        bool        pref_conf_to_env = false;
+        bool        ctrl_c_copy_img  = true;
+
         std::vector<std::string> fonts;
 
         bool operator==(const config_file_t&) const = default;
@@ -125,173 +107,27 @@ public:
      */
     void GenerateTheme(const std::string& filename, const bool force = false);
 
-    /**
-     * Override a config value from --override
-     * @param str The value to override.
-     *            Must have a '=' for separating the name and value to override.
-     *            NO spaces between
-     */
-    void OverrideOption(const std::string& opt);
+    using TomlAPI::GetValue;
+    using TomlAPI::SetValue;
 
-    /**
-     * Override a config value from --override
-     * @param key The value name to override.
-     *            Must have a '=' for separating the name and value to override.
-     *            NO spaces between
-     * @param value The value that will overwrite
-     */
-    template <typename T>
-    void OverrideOption(const std::string& key, const T& value)
-    {
-        override_config_value_t o;
-        if constexpr (std::is_same_v<T, bool>)
-        {
-            o.value_type = ValueType::kBool;
-            o.bool_value = value;
-        }
-        else if constexpr (std::is_convertible_v<T, std::string>)
-        {
-            o.value_type   = ValueType::kString;
-            o.string_value = value;
-        }
-        else if constexpr (std::is_convertible_v<T, int>)
-        {
-            o.value_type = ValueType::kInt;
-            o.int_value  = value;
-        }
-
-        m_overrides[key] = std::move(o);
-    }
-
-    /**
-     * Set value of a config variables
-     * @param path The config variable "path" (e.g "cache.source-path")
-     */
-    template <typename T>
-    void SetValue(const std::string_view key, const T& value)
-    {
-        toml::table* section = &m_tbl;
-        size_t       start   = 0;
-
-        for (;;)
-        {
-            size_t dot = key.find('.', start);
-            if (dot == key.npos)
-            {
-                section->insert_or_assign(key.substr(start), value);
-                return;
-            }
-
-            const std::string_view part = key.substr(start, dot - start);
-            auto*                  next = section->get(part);
-            if (!next || !next->is_table())
-            {
-                section->insert_or_assign(part, toml::table{});
-                next = section->get(part);
-            }
-            section = next->as_table();
-            start   = dot + 1;
-        }
-    }
-
-    /**
-     * Get value of config variables
-     * @param value The config variable "path" (e.g "config.source-path")
-     * @param fallback Default value if couldn't retrive value
-     */
-    template <typename T>
-    T GetValue(const std::string_view value,
-               const T&               fallback,
-               bool                   dont_expand_var = false,
-               bool                   is_theme        = false) const
-    {
-        const auto& overridePos = m_overrides.find(value.data());
-
-        if (overridePos != m_overrides.end())
-        {
-            const auto& ov = overridePos->second;
-            if constexpr (std::is_same<T, bool>())
-                if (ov.value_type == ValueType::kBool)
-                    return ov.bool_value;
-            if constexpr (std::is_same<T, std::string>())
-                if (ov.value_type == ValueType::kString)
-                    return ov.string_value;
-            if constexpr (std::is_same<T, int>())
-                if (ov.value_type == ValueType::kInt)
-                    return ov.int_value;
-        }
-
-        const std::optional<T>& ret =
-            is_theme ? m_theme_tbl.at_path(value).value<T>() : m_tbl.at_path(value).value<T>();
-        if constexpr (toml::is_string<T>)
-            if (!dont_expand_var)
-                return ret ? expand_var(ret.value()) : expand_var(fallback);
-            else
-                return ret ? ret.value() : fallback;
-        else
-            return ret.value_or(fallback);
-    }
-
-    std::vector<std::string> GetValueArrayStr(const std::string_view          value,
-                                              const std::vector<std::string>& fallback) const
-    {
-        std::vector<std::string> ret;
-
-        // https://stackoverflow.com/a/78266628
-        if (const toml::array* array_it = m_tbl.at_path(value).as_array())
-        {
-            ret.reserve(array_it->size());
-            array_it->for_each([&](auto&& el) {
-                if (const toml::value<std::string>* str_elem = el.as_string())
-                    ret.push_back((*str_elem)->data());
-            });
-
-            return ret;
-        }
-        else
-        {
-            return fallback;
-        }
-    }
-
-    const toml::array* GetValueArray(const std::string_view value) const { return m_tbl.at_path(value).as_array(); }
-
-    /**
-     * Get the theme style variable and return a rgba type value
-     * @param value The value we want
-     * @param fallback The default value if it doesn't exists
-     * @return rgba type variable
-     */
-    template <typename T>
-    T GetThemeStyleValue(const std::string_view value, const T& fallback, bool dont_expand_var = true) const
-    {
-        return GetValue<T>(fmt::format("theme.style.{}", value), fallback, dont_expand_var, true);
-    }
-
-    /**
-     * Get the theme style variable and return a rgba type value
-     * @param value The value we want
-     * @param fallback The default value if it doesn't exists
-     * @return rgba type variable
-     */
     template <typename T>
     T GetThemeValue(const std::string_view value, const T& fallback, bool dont_expand_var = true) const
     {
-        return GetValue<T>(fmt::format("theme.{}", value), fallback, dont_expand_var, true);
+        return m_theme.GetValue<T>(fmt::format("theme.{}", value), fallback, dont_expand_var);
     }
 
-    /**
-     * Get the theme color variable and return a rgba type value
-     * @param value The value we want
-     * @param fallback The default value if it doesn't exists
-     * @return rgba type variable
-     */
+    template <typename T>
+    T GetThemeStyleValue(const std::string_view value, const T& fallback, bool dont_expand_var = true) const
+    {
+        return m_theme.GetValue<T>(fmt::format("theme.style.{}", value), fallback, dont_expand_var);
+    }
+
     uint32_t GetThemeColorValue(const std::string_view value,
                                 const std::string&     fallback,
                                 bool                   dont_expand_var = true) const
     {
         uint32_t out;
-        hexstr_to_col(GetValue<std::string>(fmt::format("theme.colors.{}", value), fallback, dont_expand_var, true),
+        hexstr_to_col(m_theme.GetValue<std::string>(fmt::format("theme.colors.{}", value), fallback, dont_expand_var),
                       out);
         return out;
     }
@@ -301,13 +137,8 @@ public:
     const std::string& GetConfigDirPath() const { return m_config_dir_path; }
 
 private:
-    // Parsed config from LoadConfigFile()
-    toml::table m_tbl;
-
     // Parsed theme from LoadThemeFile()
-    toml::table m_theme_tbl;
-
-    std::unordered_map<std::string, override_config_value_t> m_overrides;
+    TomlAPI m_theme;
 
     std::string m_config_path;
     std::string m_theme_path;

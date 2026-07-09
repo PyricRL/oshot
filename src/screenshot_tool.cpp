@@ -2153,7 +2153,8 @@ void ScreenshotTool::DrawPreferencesWindow()
                 continue;
 
             ScopedActivePlugin _(&rt);
-            rt.plugin->on_save_preferences(rt.state);
+            rt.plugin->on_save_preferences(rt.state);  // plugin calls oshot_config_set_* here, populating rt.config
+            rt.config.SaveFile(rt.config_path.string());
             plugin_dirty[id] = false;
         }
 #endif
@@ -2218,9 +2219,9 @@ void ScreenshotTool::DrawPreferencesWindow()
             case PrefTab::kNone:    break;
             case PrefTab::Defaults: draw_preference_edit_config([&] { RefreshOcrModels(); }, window_just_opened); break;
 #ifndef DISABLE_PLUGINS
-            case PrefTab::Plugins:  draw_preference_plugin(plugin_dirty, prefs_modified); break;
+            case PrefTab::Plugins: draw_preference_plugin(plugin_dirty, prefs_modified); break;
 #endif
-            case PrefTab::Theme:    draw_theme_editor(); break;
+            case PrefTab::Theme: draw_theme_editor(); break;
         }
         ImGui::EndChild();
 

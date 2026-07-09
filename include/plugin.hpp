@@ -5,6 +5,9 @@
 
 #  include "../src/plugins/oshot_plugin.h"
 #  include "dylib.hpp"
+#  include "toml_api.hpp"
+
+namespace fs = std::filesystem;
 
 struct plugin_runtime_t;
 
@@ -20,26 +23,33 @@ struct ScopedActivePlugin
 
 struct plugin_runtime_t
 {
-    std::string           id;             // must be validated
-    std::string           config_prefix;  // cached "plugins.<id>."
-    std::filesystem::path data_dir;
+    std::string id;             // must be validated
+    std::string config_prefix;  // cached "plugins.<id>."
+    fs::path    data_dir;
 
     oshot_plugin_t* plugin = nullptr;  // non-owning and static, process-lifetime per ABI contract
     void*           state  = nullptr;  // owned by the plugin; released via plugin->destroy()
     dylib::library  lib;
 
-    plugin_runtime_t(std::string           id,
-                     std::string           config_prefix,
-                     std::filesystem::path data_dir,
-                     oshot_plugin_t*       plugin,
-                     void*                 state,
-                     dylib::library        lib)
+    TomlAPI  config;       // this plugin's own config, loaded from
+    fs::path config_path;  // ~/.config/oshot/plugins/<id>/config.toml
+
+    plugin_runtime_t(std::string     id,
+                     std::string     config_prefix,
+                     fs::path        data_dir,
+                     oshot_plugin_t* plugin,
+                     void*           state,
+                     dylib::library  lib,
+                     TomlAPI         config,
+                     fs::path        config_path)
         : id(std::move(id)),
           config_prefix(std::move(config_prefix)),
           data_dir(std::move(data_dir)),
           plugin(plugin),
           state(state),
-          lib(std::move(lib))
+          lib(std::move(lib)),
+          config(std::move(config)),
+          config_path(std::move(config_path))
     {}
 
     ~plugin_runtime_t()

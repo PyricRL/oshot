@@ -1,6 +1,5 @@
 #ifndef DISABLE_PLUGINS
 
-#  include "fmt/std.h"
 #  include "plugin.hpp"
 #  include "util.hpp"
 
@@ -28,7 +27,7 @@ void load_plugins()
             if (path.filename().string() != expected)
             {
                 spdlog::warn("Found plugin filename '{}' at {}, expected '{}'. Skipping",
-                             path.filename(),
+                             path.filename().string(),
                              path.parent_path().string(),
                              expected);
                 continue;

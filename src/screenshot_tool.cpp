@@ -1235,7 +1235,7 @@ void ScreenshotTool::DrawMenuItems()
             if (ImGui::MenuItem("Download OCR model"))
                 m_show_window.Set(SubWindow::OcrDownload);
             ImGui::Separator();
-            if (ImGui::MenuItem("Show Logs"))
+            if (ImGui::MenuItem("View Logs"))
                 m_show_window.Set(SubWindow::Logs);
             ImGui::EndMenu();
         }
@@ -1270,11 +1270,11 @@ void ScreenshotTool::DrawMenuItems()
 
         // Centered labels
         text_display = centered_text("oshot v" VERSION);
-        ImGui::Text("%s", text_display.data());
+        ImGui::TextUnformatted(text_display.data());
         ImGui::Spacing();
 
         text_display = centered_text("Screenshot tool for extracting text on the fly");
-        ImGui::Text("%s", text_display.data());
+        ImGui::TextUnformatted(text_display.data());
         ImGui::Spacing();
 
 #ifdef DISABLE_PLUGINS
@@ -1289,7 +1289,7 @@ void ScreenshotTool::DrawMenuItems()
         {
             ImGui::BeginChild("##scrollable_region", ImVec2(0, 100), false, ImGuiWindowFlags_HorizontalScrollbar);
 
-            ImGui::Text("%s", version_infos.c_str());
+            ImGui::TextUnformatted(version_infos.c_str());
 
             if (ImGui::Button("Copy text"))
                 g_clipboard.CopyText(version_infos);
@@ -1297,12 +1297,12 @@ void ScreenshotTool::DrawMenuItems()
             ImGui::TreePop();
         }
 
-        ImGui::Text("Version: v" VERSION);
-        ImGui::Text("Created by: Toni500");
-        ImGui::Text("Copyright © 2026");
+        ImGui::TextUnformatted("Version: v" VERSION);
+        ImGui::TextUnformatted("Created by: Toni500");
+        ImGui::TextUnformatted("Copyright © 2026");
         ImGui::Spacing();
 
-        ImGui::Text("Support the project at ");
+        ImGui::TextUnformatted("Support the project at ");
         ImGui::SameLine(0, 1);
         if (ImGui::TextLinkOpenURL("Toni500github/oshot", "https://github.com/Toni500github/oshot"))
             minimize_window();

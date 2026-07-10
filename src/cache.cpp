@@ -3,8 +3,6 @@
 #include <filesystem>
 #include <string>
 
-#include "fmt/format.h"
-#include "toml++/toml.hpp"
 #include "util.hpp"
 
 Cache::Cache(const std::string& cache_dir) : m_cache_dir_path(cache_dir)
@@ -38,22 +36,8 @@ Result<> Cache::LoadCacheFile()
     // snapshot and switch to that directory.
     CdGuard guard(m_cache_dir_path);
 
-    try
-    {
-        if (fs::exists(mk_file_path))
-            m_tbl = toml::parse_file(mk_file_path);
-    }
-    catch (const toml::parse_error& err)
-    {
-        return Err(
-            fmt::format("Parsing cache file '{}' failed:\n"
-                        "{}\n"
-                        "\t(error occurred at line {} column {})",
-                        mk_file_path,
-                        err.description(),
-                        err.source().begin.line,
-                        err.source().begin.column));
-    }
+    if (fs::exists(mk_file_path))
+        LoadFile(mk_file_path);
 
     return Ok();
 }

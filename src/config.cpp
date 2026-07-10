@@ -6,7 +6,6 @@
 
 #include "fmt/base.h"
 #include "fmt/os.h"
-#include "toml++/toml.hpp"
 #include "util.hpp"
 
 Config::Config(const fs::path& configFile, const fs::path& configDir)
@@ -17,6 +16,7 @@ Config::Config(const fs::path& configFile, const fs::path& configDir)
         spdlog::warn("Oshot config folder was not found, creating folders at {}!", configDir.string());
         fs::create_directories(configDir);
         fs::create_directories(configDir / "models");
+        fs::create_directories(configDir / "plugins");
     }
 
     if (!fs::exists(configFile))
@@ -28,7 +28,7 @@ Config::Config(const fs::path& configFile, const fs::path& configDir)
 
 void Config::LoadConfigFile(const std::string& filename)
 {
-    LoadFile(filename);
+    LoadFile(filename, true);
 
     File.ocr_path         = GetValue<std::string>("default.ocr-path", File.ocr_path);
     File.ocr_get_repo     = GetValue<std::string>("default.ocr-repo-downlaod", "tesseract-ocr/tessdata");

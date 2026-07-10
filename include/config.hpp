@@ -34,6 +34,8 @@ public:
         std::string theme_file_path  = "theme.toml";
         std::string image_out_fmt    = "oshot_{:%F_%H-%M}";
         int         delay            = 0;
+        int         color_picker     = 0;  // 0 = "Bar - Square"; 1 = "Wheel - Triangle";
+        int         cpa_mode         = 2;  // color_picker_alpha_mode
         bool        allow_out_edit   = false;
         bool        real_full_screen = false;
         bool        show_text_tools  = true;
@@ -167,6 +169,16 @@ ocr-repo-downlaod = "{}"
 # Doesn't affect if opening external image (i.e. -f flag)
 delay = {}
 
+# Which ImGui color picker widget to use for annotation colors.
+# 0 = "Bar - Square"; 1 = "Wheel - Triangle"
+color-picker = {}
+ 
+# Alpha (transparency) editing behavior for the annotation color picker.
+# 0 = Disabled (alpha not editable)
+# 1 = Inline slider
+# 2 = Dedicated alpha bar
+color-picker-alpha-mode = {}
+ 
 # On some desktop environments (e.g. MATE), the compositor may cause
 # the capture window to look grainy or pixelated. Enabling this uses exclusive
 # fullscreen mode which bypasses the compositor and fixes it.

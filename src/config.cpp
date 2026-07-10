@@ -110,6 +110,8 @@ void Config::GenerateConfig(const std::string& filename, const bool force)
             File.ocr_model,
             File.ocr_get_repo,
             File.delay,
+            File.color_picker,
+            File.cpa_mode,
             File.real_full_screen,
             File.enable_vsync,
             File.allow_out_edit,

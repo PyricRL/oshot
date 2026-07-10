@@ -93,6 +93,14 @@ enum class SubWindow
     COUNT
 };
 
+// Used for config.hpp
+enum class ColorPickerAlpha
+{
+    Disabled = 0,  // alpha channel is not editable
+    Inline   = 1,  // alpha editable via the picker's inline slider
+    Bar      = 2,  // alpha editable via a dedicated alpha bar
+};
+
 enum class CurrentAction
 {
     IsDrawing,

@@ -1520,9 +1520,6 @@ void ScreenshotTool::DrawBarDecodeTools()
 
 void ScreenshotTool::DrawAnnotationToolbar()
 {
-    static int                   item_picker      = 0;
-    static constexpr const char* color_pickers[2] = { "Bar - Square", "Wheel - Triangle" };
-
     const float sel_x = m_selection.get_x();
     const float sel_y = m_selection.get_y();
     const float sel_h = m_selection.get_height();
@@ -1577,7 +1574,15 @@ void ScreenshotTool::DrawAnnotationToolbar()
             else
                 m_tool_thickness[idx(m_current_tool)] = std::clamp(m_tool_thickness[idx(m_current_tool)], 1.0f, 10.0f);
 
-            static ImGuiColorEditFlags color_picker_flags = ImGuiColorEditFlags_AlphaBar;
+            ImGuiColorEditFlags flags = g_config->File.color_picker == 0 ? ImGuiColorEditFlags_PickerHueBar
+                                                                         : ImGuiColorEditFlags_PickerHueWheel;
+
+            switch (ColorPickerAlpha(g_config->File.cpa_mode))
+            {
+                case ColorPickerAlpha::Disabled: flags |= ImGuiColorEditFlags_NoAlpha; break;
+                case ColorPickerAlpha::Bar:      flags |= ImGuiColorEditFlags_AlphaBar; break;
+                case ColorPickerAlpha::Inline:   /* no extra flag needed */ break;
+            }
 
             ImGui::TextUnformatted("Annotation Settings");
             ImGui::Separator();
@@ -1604,23 +1609,6 @@ void ScreenshotTool::DrawAnnotationToolbar()
                 ImGui::TextUnformatted("Thickness");
             }
 
-            ImGui::Combo("Color picker", &item_picker, color_pickers, IM_ARRAYSIZE(color_pickers));
-
-            switch (item_picker)
-            {
-                case 0:
-                    color_picker_flags |= ImGuiColorEditFlags_PickerHueBar;
-                    color_picker_flags &= ~ImGuiColorEditFlags_PickerHueWheel;
-                    break;
-                case 1:
-                    color_picker_flags |= ImGuiColorEditFlags_PickerHueWheel;
-                    color_picker_flags &= ~ImGuiColorEditFlags_PickerHueBar;
-                    break;
-            }
-            ImGui::CheckboxFlags("Disable alpha edit", &color_picker_flags, ImGuiColorEditFlags_NoAlpha);
-            if (!(color_picker_flags & ImGuiColorEditFlags_NoAlpha))
-                ImGui::CheckboxFlags("Show alpha bar", &color_picker_flags, ImGuiColorEditFlags_AlphaBar);
-
             if (ImGui::Button("Pick color"))
             {
                 m_current_actions.Set(CurrentAction::IsColorPicking);
@@ -1630,7 +1618,7 @@ void ScreenshotTool::DrawAnnotationToolbar()
             HelpMarker("Click anywhere on the image to pick a color");
 
             ImVec4 picker = m_current_color.to_imvec4();
-            ImGui::ColorPicker4("Color", reinterpret_cast<float*>(&picker), color_picker_flags);
+            ImGui::ColorPicker4("Color", reinterpret_cast<float*>(&picker), flags);
 
             m_current_color = rgba_t(picker);
             g_cache->SetValue(CacheEntry::AnnColor, m_current_color.to_rgba());
@@ -1754,6 +1742,15 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
         "", "##config_theme_file_path", toml_filters, 1, [] { /* applied on Save */ }, g_config->File.theme_file_path);
     ImGui::Spacing();
 
+    ImGui::Text("Color picker style");
+    ImGui::Combo("##config_color_picker", &g_config->File.color_picker, "Bar - Square\0Wheel - Triangle\0\0");
+    ImGui::Spacing();
+
+    ImGui::Text("Annotation alpha editing");
+    ImGui::Combo(
+        "##config_color_picker_alpha_mode", &g_config->File.cpa_mode, "Disabled\0Inline slider\0Dedicated bar\0\0");
+    ImGui::Spacing();
+
     // --- Checkboxes ---
     ImGui::Checkbox("Exclusive fullscreen##config_real_full_screen", &g_config->File.real_full_screen);
     ImGui::SameLine();
@@ -1792,7 +1789,7 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
         "Shortcut to use when copying the image selection.\n"
         "If disabled, the shortcut will be CTRL+SHIFT+C.");
 
-    // --- Image output format section ---
+    // --- Image filename output format section ---
     ImGui::Dummy(ImVec2(0, 8));
     ImGui::Separator();
     ImGui::Spacing();
@@ -2673,8 +2670,8 @@ void ScreenshotTool::DrawAnnotations()
         [&](const bool filled, const annotation_t& ann, const ImVec2& p1, const ImVec2& p2, const float t) {
             ImVec2 min(std::min(p1.x, p2.x), std::min(p1.y, p2.y));
             ImVec2 max(std::max(p1.x, p2.x), std::max(p1.y, p2.y));
-            filled ? draw_list->AddRectFilled(min, max, ann.color.to_abgr(), 0.0f, 0)
-                   : draw_list->AddRect(min, max, ann.color.to_abgr(), t, 0.0f, 0);
+            filled ? draw_list->AddRectFilled(min, max, ann.color.to_abgr(), 0.0f, ImDrawFlags_None)
+                   : draw_list->AddRect(min, max, ann.color.to_abgr(), 0.0f, t, ImDrawFlags_None);
         };
 
     auto draw_circle_or_filled =

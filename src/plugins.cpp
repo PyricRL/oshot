@@ -78,7 +78,7 @@ void load_plugins()
                 TomlAPI toml_api;
                 if (!fs::exists(plugin_config_path))
                     std::ofstream(plugin_config_path).close();
-                toml_api.LoadFile(plugin_config_path);
+                toml_api.LoadFile(plugin_config_path.string());
 
                 auto [it, inserted] = g_plugins.try_emplace(plugin->id,
                                                             plugin->id,

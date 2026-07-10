@@ -12,9 +12,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-add_compile_options($<$<CONFIG:Debug>:-fsanitize=address>)
-add_compile_options($<$<CONFIG:Debug>:-fno-omit-frame-pointer>)
-add_link_options($<$<CONFIG:Debug>:-fsanitize=address>)
+#add_compile_options($<$<CONFIG:Debug>:-fsanitize=address>)
+#add_compile_options($<$<CONFIG:Debug>:-fno-omit-frame-pointer>)
+#add_link_options($<$<CONFIG:Debug>:-fsanitize=address>)
 
 # GCC/Clang default Release flags already include -O3; this just makes it
 # explicit. Guarded because "-O3" is not a valid cl.exe switch and would

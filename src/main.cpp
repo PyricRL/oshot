@@ -131,7 +131,6 @@ static bool parseargs(int argc, char* argv[], const fs::path& configFile)
         {"source",  required_argument, 0, 'f'},
         {"override",required_argument, 0, 'O'},
 
-        {"debug",      no_argument,       0, "debug"_fnv1a16},
         {"gen-config", optional_argument, 0, "gen-config"_fnv1a16},
 
         {0,0,0,0}
@@ -163,8 +162,6 @@ static bool parseargs(int argc, char* argv[], const fs::path& configFile)
                 g_config->Runtime.only_launch_tray = true; break;
             case 'g':
                 g_config->Runtime.only_launch_gui = true; break;
-            case "debug"_fnv1a16:
-                g_config->Runtime.debug_print = true; break;
 
             case "gen-config"_fnv1a16:
                 if (OPTIONAL_ARGUMENT_IS_PRESENT)
@@ -399,7 +396,7 @@ int main(int argc, char* argv[])
     if (!g_config->File.theme_file_path.empty())
         g_config->LoadThemeFile(g_config->File.theme_file_path);
 
-    spdlog::set_level(g_config->Runtime.debug_print ? spdlog::level::debug : spdlog::level::info);
+    spdlog::set_level(spdlog::level::debug);
 
     logger.info("=== oshot starting ===");
     logger.info("Log file path: {}", file->filename());

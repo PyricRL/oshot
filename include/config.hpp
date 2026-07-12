@@ -58,11 +58,7 @@ public:
         bool        enable_handles   = true;
         bool        only_launch_tray = false;
         bool        only_launch_gui  = false;
-#if DEBUG || (defined(_WIN32) && WINDOWS_CMD)
-        bool debug_print = true;
-#else
-        bool debug_print = false;
-#endif
+
         bool operator==(const runtime_settings_t&) const = default;
     } Runtime;
 
@@ -331,7 +327,6 @@ GENERAL OPTIONS:
 
     -g, --gui                   Only launch the GUI.
     -t, --tray                  Only launch system tray.
-    --debug                     Print debug statments.
     --gen-config [<PATH>]       Generate default config file. If PATH is omitted, saves to default location.
                                 Prompts before overwriting.
 )");

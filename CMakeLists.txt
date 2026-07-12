@@ -123,19 +123,20 @@ add_executable(
 )
 enable_lto(${PROJECT_NAME})
 
+set(VERSION_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h)
 add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/version.h
+    OUTPUT ${VERSION_HEADER}
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generateVersion.sh
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generateVersion.sh
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generateVersion.sh
     COMMENT "Generating version header"
 )
-add_custom_target(
-    generate_version
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/version.h
+add_custom_target(generate_version
+    DEPENDS ${VERSION_HEADER}
 )
 add_dependencies(${PROJECT_NAME} generate_version)
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CONFIG:Debug>:DEBUG=1>)
 target_compile_options(
@@ -186,7 +187,7 @@ set_target_properties(
 # -----------------------------
 add_library(
     oshot_common
-    STATIC
+    OBJECT
     src/cache.cpp
     src/clipboard.cpp
     src/config.cpp

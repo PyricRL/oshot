@@ -121,7 +121,8 @@ enum class OcrError : size_t
 {
     InvalidModel,
     InvalidPath,
-    FailedToScan,
+    NeedToScanDir,
+    FailedToOCR,
     COUNT
 };
 

@@ -1342,23 +1342,26 @@ void ScreenshotTool::DrawOcrTools()
     ImGui::PushID("OcrTools");
     ImGui::SeparatorText("OCR");
 
+    const bool need_to_scan  = HasError(ectx, OcrError::NeedToScanDir);
     const bool invalid_path  = HasError(ectx, OcrError::InvalidPath);
     const bool invalid_model = HasError(ectx, OcrError::InvalidModel);
 
     // --- Path input ---
     push_error_style(invalid_path);
-    draw_input_text_folder("Path", "##ocr_path", [] {}, ocr_path);
-    ImGui::SameLine();
-    if (ImGui::Button("Scan"))
+    push_error_style(need_to_scan);
+    draw_input_text_folder("Path", "##ocr_path", [&] { SetError(ectx, OcrError::NeedToScanDir); }, ocr_path);
+    if (need_to_scan && ImGui::Button("Scan"))
         RefreshOcrModels();
+    ImGui::SameLine();
     const auto& it    = std::find(m_ocr_models_list.begin(), m_ocr_models_list.end(), ocr_model);
     item_selected_idx = (it != m_ocr_models_list.end()) ? std::distance(m_ocr_models_list.begin(), it) : 0;
     pop_error_label(invalid_path, "Invalid!");
+    pop_error_label(need_to_scan, "Need to scan new directory");
     ImGui::SameLine();
     HelpMarker("Full path to the OCR models (.traineddata). Supports drag-and-drop");
 
-    // --- Model combo (only shown when path is valid) ---
-    if (!invalid_path)
+    // --- Model combo (only shown when path is valid and isn't changed) ---
+    if (!invalid_path && !need_to_scan)
     {
         push_error_style(invalid_model);
         if (ImGui::BeginCombo("Model", ocr_model.c_str(), ImGuiComboFlags_HeightLarge))
@@ -1392,21 +1395,21 @@ void ScreenshotTool::DrawOcrTools()
     }
 
     // --- Extract button + result details ---
-    if (!invalid_path && !invalid_model)
+    if (!invalid_path && !invalid_model && !need_to_scan)
     {
         if (ImGui::Button("Extract Text"))
         {
             const Result<>& configure_res = m_ocr_api.Configure(ocr_path.c_str(), ocr_model.c_str());
             if (!configure_res.ok())
             {
-                SetError(ectx, OcrError::FailedToScan, configure_res.error_v());
+                SetError(ectx, OcrError::FailedToOCR, configure_res.error_v());
             }
             else
             {
                 Result<ocr_result_t> result = m_ocr_api.ExtractTextCapture(GetFinalImage(true));
                 if (result.ok())
                 {
-                    ClearError(ectx, OcrError::FailedToScan);
+                    ClearError(ectx, OcrError::FailedToOCR);
                     m_inputs.ocr_results = std::move(result.get());
 #ifndef DISABLE_PLUGINS
                     if (!g_plugins.empty())
@@ -1430,18 +1433,18 @@ void ScreenshotTool::DrawOcrTools()
                 }
                 else
                 {
-                    SetError(ectx, OcrError::FailedToScan, result.error_v());
+                    SetError(ectx, OcrError::FailedToOCR, result.error_v());
                 }
             }
         }
 
         ImGui::SameLine();
 
-        if (HasError(ectx, OcrError::FailedToScan))
+        if (HasError(ectx, OcrError::FailedToOCR))
         {
             ImGui::SameLine();
             ImGui::TextColored(
-                error_color, "Failed to initialize OCR: %s", GetError(ectx, OcrError::FailedToScan).c_str());
+                error_color, "Failed to initialize OCR: %s", GetError(ectx, OcrError::FailedToOCR).c_str());
         }
         else
         {
@@ -3308,14 +3311,18 @@ void ScreenshotTool::SyncRuntimeFromConfig()
 
 void ScreenshotTool::RefreshOcrModels()
 {
-    static std::string last_scanned_ocr_path = m_inputs.ocr_path;
-    if (m_inputs.ocr_path == last_scanned_ocr_path)
-        return;
+    static std::string      last_scanned_ocr_path = m_inputs.ocr_path;
+    ErrorContext<OcrError>& ectx                  = m_ocr_errors;
 
-    ErrorContext<OcrError>& ectx = m_ocr_errors;
+    if (m_inputs.ocr_path == last_scanned_ocr_path)
+    {
+        ClearError(ectx, OcrError::NeedToScanDir);
+        return;
+    }
 
     get_training_data_list(m_inputs.ocr_path, m_ocr_models_list);
     last_scanned_ocr_path = m_inputs.ocr_path;
+    ClearError(ectx, OcrError::NeedToScanDir);
 
     if (m_ocr_models_list.empty())
     {

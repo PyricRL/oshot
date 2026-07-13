@@ -80,6 +80,9 @@ static void get_training_data_list(const std::string& datadir, std::vector<std::
 {
     langs.clear();
 
+    if (!fs::exists(datadir))
+        return;
+
     for (const auto& entry : fs::recursive_directory_iterator(
              datadir, fs::directory_options::follow_directory_symlink | fs::directory_options::skip_permission_denied))
     {
@@ -1323,12 +1326,6 @@ void ScreenshotTool::DrawOcrTools()
 
     static size_t item_selected_idx = 0;
 
-    auto refresh_models = [&]() {
-        RefreshOcrModels();
-        const auto& it    = std::find(m_ocr_models_list.begin(), m_ocr_models_list.end(), ocr_model);
-        item_selected_idx = (it != m_ocr_models_list.end()) ? std::distance(m_ocr_models_list.begin(), it) : 0;
-    };
-
     auto push_error_style = [](bool cond) {
         if (cond)
             ImGui::PushStyleColor(ImGuiCol_Text, error_color);
@@ -1350,7 +1347,12 @@ void ScreenshotTool::DrawOcrTools()
 
     // --- Path input ---
     push_error_style(invalid_path);
-    draw_input_text_folder("Path", "##ocr_path", refresh_models, ocr_path);
+    draw_input_text_folder("Path", "##ocr_path", [] {}, ocr_path);
+    ImGui::SameLine();
+    if (ImGui::Button("Scan"))
+        RefreshOcrModels();
+    const auto& it    = std::find(m_ocr_models_list.begin(), m_ocr_models_list.end(), ocr_model);
+    item_selected_idx = (it != m_ocr_models_list.end()) ? std::distance(m_ocr_models_list.begin(), it) : 0;
     pop_error_label(invalid_path, "Invalid!");
     ImGui::SameLine();
     HelpMarker("Full path to the OCR models (.traineddata). Supports drag-and-drop");
@@ -3306,9 +3308,15 @@ void ScreenshotTool::SyncRuntimeFromConfig()
 
 void ScreenshotTool::RefreshOcrModels()
 {
+    static std::string last_scanned_ocr_path = m_inputs.ocr_path;
+    if (m_inputs.ocr_path == last_scanned_ocr_path)
+        return;
+
     ErrorContext<OcrError>& ectx = m_ocr_errors;
 
     get_training_data_list(m_inputs.ocr_path, m_ocr_models_list);
+    last_scanned_ocr_path = m_inputs.ocr_path;
+
     if (m_ocr_models_list.empty())
     {
         SetError(ectx, OcrError::InvalidPath, "Doesn't exist or is empty");

@@ -5,10 +5,10 @@
 
 void load_plugins()
 {
-    const fs::path pluginDir = get_config_dir() / "plugins";
-    fs::create_directories(pluginDir);
+    const fs::path pluginsDir = get_config_dir() / "plugins";
+    fs::create_directories(pluginsDir);
 
-    for (const auto& plugin_dir : fs::directory_iterator(pluginDir, fs::directory_options::skip_permission_denied))
+    for (const auto& plugin_dir : fs::directory_iterator(pluginsDir, fs::directory_options::skip_permission_denied))
     {
         if (!plugin_dir.is_directory())
             continue;
@@ -21,15 +21,20 @@ void load_plugins()
         {
             const fs::path& path = entry.path();
 
-            if (!path.has_extension() || path.extension().string() != dylib::decorations::os_default().suffix)
-                continue;
+            // TODO: add a *real* plugin management and metadata and do not load anything
+            //       if plugin is set to disabled.
+            const std::string expected_disabled = expected + ".disabled";
+            const std::string filename          = path.filename().string();
+            const bool        is_enabled_file   = filename == expected;
+            const bool        is_disabled_file  = filename == expected_disabled;
 
-            if (path.filename().string() != expected)
+            if (!is_enabled_file && !is_disabled_file)
             {
-                spdlog::warn("Found plugin filename '{}' at {}, expected '{}'. Skipping",
-                             path.filename().string(),
-                             path.parent_path().string(),
-                             expected);
+                spdlog::warn("Found plugin filename '{}' at {}, expected '{}' or '{}'. Skipping",
+                             filename,
+                             path.string(),
+                             expected,
+                             expected_disabled);
                 continue;
             }
 
@@ -45,6 +50,8 @@ void load_plugins()
                     continue;
                 }
 
+                // TODO: add a *real* plugin management and metadata and do not load anything
+                //       if plugin is set to disabled.
                 if (!plugin->render || !plugin->id || !plugin->name || plugin->name[0] == '\0')
                 {
                     spdlog::error("Plugin '{}' doesn't define name/ID or render function", path.stem().string());
@@ -84,8 +91,10 @@ void load_plugins()
                                                             plugin->id,
                                                             fmt::format("plugins.{}.", plugin->id),
                                                             std::move(plugin_config_dir),
+                                                            std::move(path),
                                                             plugin,
                                                             nullptr,  // state filled in below
+                                                            is_enabled_file,
                                                             std::move(lib),
                                                             std::move(toml_api),
                                                             std::move(plugin_config_path));
@@ -95,7 +104,9 @@ void load_plugins()
                     continue;
                 }
 
-                if (plugin->init)
+                // TODO: add a *real* plugin management and metadata and do not load anything
+                //       if plugin is set to disabled.
+                if (is_enabled_file && plugin->init)
                 {
                     ScopedActivePlugin _(&it->second);
                     it->second.state = plugin->init();

@@ -478,13 +478,17 @@ void ScreenshotTool::RenderOverlay()
         DrawMenuItems();
         DrawPreferencesWindow();
         DrawDownloadOCRWindow();
+        DrawManagePluginsWindow();
         DrawLogsWindow();
         DrawOcrTools();
         DrawBarDecodeTools();
 #ifndef DISABLE_PLUGINS
-        for (auto& [_, entry] : g_plugins)
+        for (auto& [id, rt] : g_plugins)
         {
-            oshot_plugin_t* plugin = entry.plugin;
+            if (!rt.enabled)
+                continue;
+
+            oshot_plugin_t* plugin = rt.plugin;
             if (!plugin->render || !plugin->id || !plugin->name || plugin->name[0] == '\0')
                 continue;
 
@@ -495,8 +499,8 @@ void ScreenshotTool::RenderOverlay()
                 // auto-height
                 ImGui::BeginChild(plugin->name, ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders);
 
-                ScopedActivePlugin _(&entry);
-                plugin->render(entry.state);
+                ScopedActivePlugin _(&rt);
+                plugin->render(rt.state);
 
                 ImGui::EndChild();
                 ImGui::PopID();
@@ -1238,6 +1242,13 @@ void ScreenshotTool::DrawMenuItems()
             if (ImGui::MenuItem("Download OCR model"))
                 m_show_window.Set(SubWindow::OcrDownload);
             ImGui::Separator();
+
+#ifndef DISABLE_PLUGINS
+            if (ImGui::MenuItem("Manage Plugins"))
+                m_show_window.Set(SubWindow::ManagePlugins);
+            ImGui::Separator();
+#endif
+
             if (ImGui::MenuItem("View Logs"))
                 m_show_window.Set(SubWindow::Logs);
             ImGui::EndMenu();
@@ -1422,7 +1433,7 @@ void ScreenshotTool::DrawOcrTools()
                         };
                         for (auto& [id, rt] : g_plugins)
                         {
-                            if (!rt.plugin->on_ocr_done)
+                            if (!rt.enabled || !rt.plugin->on_ocr_done)
                                 continue;
                             ScopedActivePlugin _(&rt);
                             rt.plugin->on_ocr_done(rt.state, &ocr);
@@ -1977,6 +1988,9 @@ static void draw_preference_plugin(auto& plugin_dirty, bool& prefs_modified)
 
     for (auto& [id, rt] : g_plugins)
     {
+        if (!rt.enabled)
+            continue;
+
         oshot_plugin_t* pl = rt.plugin;
         if (!pl->render_preferences)
         {
@@ -2151,7 +2165,7 @@ void ScreenshotTool::DrawPreferencesWindow()
 #ifndef DISABLE_PLUGINS
         for (auto& [id, rt] : g_plugins)
         {
-            if (!plugin_dirty[id] || !rt.plugin->on_save_preferences)
+            if (!plugin_dirty[id] || !rt.enabled || !rt.plugin->on_save_preferences)
                 continue;
 
             ScopedActivePlugin _(&rt);
@@ -2168,7 +2182,7 @@ void ScreenshotTool::DrawPreferencesWindow()
 #ifndef DISABLE_PLUGINS
         for (auto& [id, rt] : g_plugins)
         {
-            if (!plugin_dirty[id] || !rt.plugin->on_discard_preferences)
+            if (!plugin_dirty[id] || !rt.enabled || !rt.plugin->on_discard_preferences)
                 continue;
             ScopedActivePlugin _(&rt);
             rt.plugin->on_discard_preferences(rt.state);
@@ -2291,6 +2305,80 @@ void ScreenshotTool::DrawPreferencesWindow()
         prev_window_open = false;
         prefs_modified   = false;
     }
+}
+
+void ScreenshotTool::DrawManagePluginsWindow()
+{
+#ifndef DISABLE_PLUGINS
+    if (!m_show_window.Has(SubWindow::ManagePlugins))
+        return;
+
+    bool open = m_show_window.Has(SubWindow::ManagePlugins);
+    ImGui::SetNextWindowSize(ImVec2(560, 400), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Manage plugins##manage_plugins_window", &open, ImGuiWindowFlags_NoSavedSettings))
+    {
+        ImGui::TextDisabled("Note: Changes takes effect after restart of oshot");
+        ImGui::Spacing();
+
+        for (auto& [id, rt] : g_plugins)
+        {
+            ScopedActivePlugin _(&rt);
+
+            oshot_plugin_t* plugin = rt.plugin;
+            ImGui::TextUnformatted(plugin->name);
+            ImGui::TextDisabled("%s", plugin->id);
+
+            if (rt.plugin_path.has_extension() && rt.plugin_path.extension() != ".disabled")
+            {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));         // Red
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));  // Light Red
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.8f, 0.0f, 0.0f, 1.0f));   // Dark Red
+                if (ImGui::Button("Disable"))
+                {
+                    if (fs::exists(rt.plugin_path))
+                    {
+                        fs::path disabled_path(rt.plugin_path);
+                        disabled_path += ".disabled";
+                        std::error_code ec;
+                        fs::rename(rt.plugin_path, disabled_path, ec);
+                        if (!ec)
+                            rt.plugin_path = std::move(disabled_path);
+                        else
+                            error("Failed to disable plugin '{}': {}", rt.id, ec.message());
+                    }
+                }
+                ImGui::PopStyleColor(3);
+            }
+            else
+            {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.10f, 0.65f, 0.25f, 1.0f));         // Green
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15f, 0.75f, 0.30f, 1.0f));  // Light Green
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.08f, 0.55f, 0.20f, 1.0f));   // Dark Green
+                if (ImGui::Button("Enable"))
+                {
+                    if (fs::exists(rt.plugin_path))
+                    {
+                        fs::path enabled_path(rt.plugin_path);
+                        enabled_path.replace_extension();
+                        std::error_code ec;
+                        fs::rename(rt.plugin_path, enabled_path, ec);
+                        if (!ec)
+                            rt.plugin_path = std::move(enabled_path);
+                        else
+                            error("Failed to enable plugin '{}': {}", rt.id, ec.message());
+                    }
+                }
+                ImGui::PopStyleColor(3);
+            }
+
+            ImGui::Separator();
+            ImGui::Spacing();
+        }
+        ImGui::End();
+    }
+
+    m_show_window.Set(SubWindow::ManagePlugins, open);
+#endif
 }
 
 void ScreenshotTool::DrawLogsWindow()

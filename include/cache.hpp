@@ -1,8 +1,8 @@
 #ifndef _CACHE_HPP_
 #define _CACHE_HPP_
 
-#include <string>
 #include <array>
+#include <string>
 
 #include "toml_api.hpp"
 #include "util.hpp"

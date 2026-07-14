@@ -37,7 +37,7 @@ enum class ToolType : size_t
     Count
 };
 
-enum class ToolState
+enum class ToolState : size_t
 {
     Idle,
     Capturing,
@@ -83,12 +83,13 @@ enum class PrefTab
     Theme
 };
 
-enum class SubWindow
+enum class SubWindow : size_t
 {
     OcrDownload,
     About,
     Preferences,
     MainTextTools,
+    ManagePlugins,
     Logs,
     COUNT
 };
@@ -98,7 +99,7 @@ enum class ColorPickerAlpha
 {
     Disabled = 0,  // alpha channel is not editable
     Inline   = 1,  // alpha editable via the picker's inline slider
-    Bar      = 2,  // alpha editable via a dedicated alpha bar
+    Bar      = 2,  // alpha editable via a dedicated alpha bar, too
 };
 
 enum class CurrentAction
@@ -160,10 +161,10 @@ struct annotation_t
     ToolType             type = ToolType::kNone;
     point_t              start;
     point_t              end;
-    std::string          text;                                       // For text tool
-    std::uint8_t         count = 0;                                  // For CounterBubble tool
-    std::vector<point_t> points;                                     // For pencil tool
-    rgba_t               color     = rgba_t::from_rgba(0xFF0000FF);  // RGBA
+    std::string          text;                            // For text tool
+    std::uint8_t         count = 0;                       // For CounterBubble tool
+    std::vector<point_t> points;                          // For pencil tool
+    rgba_t               color     = rgba_t(0xFF0000FF);  // RGBA
     float                thickness = 3.0f;
 };
 
@@ -371,6 +372,7 @@ private:
     void DrawAnnotationToolbar();
     void DrawPreferencesWindow();
     void DrawDownloadOCRWindow();
+    void DrawManagePluginsWindow();
     void DrawLogsWindow();
 
     void UpdateHandleHoverState();

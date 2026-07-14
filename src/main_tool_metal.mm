@@ -162,15 +162,12 @@ int run_main_tool()
     apply_imgui_theme();
 
     // Start the overlay window
-    {
-        const Result<>& res = g_ss_tool.StartWindow();
-        MUST_OK(res, {
-            error("Failed to start tool window: {}", res.error_v());
-            if (!g_is_systray)
-                glfwTerminate();
-            return EXIT_FAILURE;
-        });
-    }
+    MUST_OK(g_ss_tool.StartWindow(), {
+        error("Failed to start tool window: {}", _r.error_v());
+        if (!g_is_systray)
+            glfwTerminate();
+        return EXIT_FAILURE;
+    });
 
     // Create Metal texture from screenshot buffer
     capture_result_t& cap = g_ss_tool.GetRawScreenshot();

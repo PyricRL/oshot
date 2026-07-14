@@ -70,7 +70,6 @@ struct plugin_runtime_t
     plugin_runtime_t(const plugin_runtime_t&)            = delete;
     plugin_runtime_t& operator=(const plugin_runtime_t&) = delete;
     plugin_runtime_t(plugin_runtime_t&&)                 = default;
-    plugin_runtime_t& operator=(plugin_runtime_t&&)      = default;
 };
 
 void load_plugins();

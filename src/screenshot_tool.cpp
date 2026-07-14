@@ -1272,7 +1272,7 @@ void ScreenshotTool::DrawMenuItems()
         float            window_width = ImGui::GetWindowSize().x;
         std::string_view text_display;
 
-        auto centered_text = [&](const std::string_view text) -> std::string_view {
+        auto centered_text = [&](const std::string_view text) {
             float name_width = ImGui::CalcTextSize(text.data()).x;
             ImGui::SetCursorPosX((window_width - name_width) / 2);
             return text;
@@ -2400,7 +2400,7 @@ void ScreenshotTool::DrawLogsWindow()
             case spdlog::level::warn:     return rgba_t(0xFFCC33FF);  // amber
             case spdlog::level::err:      return rgba_t(0xFF4D4DFF);  // red
             case spdlog::level::critical: return rgba_t(0xFF0000FF);  // pure red
-            default:                      return rgba_t(0xFFFFFFFF);                       // white
+            default:                      return rgba_t(0xFFFFFFFF);  // white
         }
     };
 
@@ -2491,7 +2491,7 @@ void ScreenshotTool::DrawLogsWindow()
                 {
                     if (ImGui::MenuItem("Copy line"))
                         MUST_OK(g_clipboard.CopyText(msg.payload.data()),
-                                spdlog::error("Failed to copy line log: {}", _r.error_v()));
+                                error("Failed to copy line log: {}", _r.error_v()));
                     ImGui::EndPopup();
                 }
             }
@@ -2502,7 +2502,7 @@ void ScreenshotTool::DrawLogsWindow()
             std::string all_text;
             for (const auto* msg : shown)
                 all_text += fmt::format("[{}] {}\n", level_tag(msg->level), msg->payload);
-            MUST_OK(g_clipboard.CopyText(all_text), spdlog::error("Failed to copy logs: {}", _r.error_v()));
+            MUST_OK(g_clipboard.CopyText(all_text), error("Failed to copy logs: {}", _r.error_v()));
         }
 
         if (autoscroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f)

@@ -341,6 +341,7 @@ private:
     std::function<void(const capture_result_t&)>                   m_on_image_reload;
     std::function<void(SavingOp, const Result<capture_result_t>&)> m_on_complete;
 
+    std::string                                    m_last_scanned_ocr_path;
     GeneralContext<SubWindow>                      m_show_window;
     GeneralContext<CurrentAction>                  m_current_actions;
     std::array<ImTextureRef, idx(ToolType::Count)> m_tool_textures;

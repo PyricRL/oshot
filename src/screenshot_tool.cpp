@@ -1375,7 +1375,14 @@ void ScreenshotTool::DrawOcrTools()
     if (!invalid_path && !need_to_scan)
     {
         push_error_style(invalid_model);
-        if (ImGui::BeginCombo("Model", ocr_model.c_str(), ImGuiComboFlags_HeightLarge))
+
+        const bool combo_open = ImGui::BeginCombo("Model", ocr_model.c_str(), ImGuiComboFlags_HeightLarge);
+
+        // Don't infect the whole list of red
+        if (invalid_model)
+            ImGui::PopStyleColor();
+
+        if (combo_open)
         {
             static ImGuiTextFilter filter;
             if (ImGui::IsWindowAppearing())
@@ -1402,7 +1409,12 @@ void ScreenshotTool::DrawOcrTools()
             }
             ImGui::EndCombo();
         }
-        pop_error_label(invalid_model, "Invalid!");
+
+        if (invalid_model)
+        {
+            ImGui::SameLine();
+            ImGui::TextColored(error_color, "Invalid!");
+        }
     }
 
     // --- Extract button + result details ---
@@ -3399,17 +3411,16 @@ void ScreenshotTool::SyncRuntimeFromConfig()
 
 void ScreenshotTool::RefreshOcrModels()
 {
-    static std::string      last_scanned_ocr_path = m_inputs.ocr_path;
-    ErrorContext<OcrError>& ectx                  = m_ocr_errors;
+    ErrorContext<OcrError>& ectx = m_ocr_errors;
 
-    if (m_inputs.ocr_path == last_scanned_ocr_path)
+    if (m_inputs.ocr_path == m_last_scanned_ocr_path)
     {
         ClearError(ectx, OcrError::NeedToScanDir);
         return;
     }
 
     get_training_data_list(m_inputs.ocr_path, m_ocr_models_list);
-    last_scanned_ocr_path = m_inputs.ocr_path;
+    m_last_scanned_ocr_path = m_inputs.ocr_path;
     ClearError(ectx, OcrError::NeedToScanDir);
 
     if (m_ocr_models_list.empty())

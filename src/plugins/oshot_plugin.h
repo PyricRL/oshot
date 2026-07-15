@@ -75,11 +75,10 @@ typedef struct
  * ---------------------------------------------------------------- */
 typedef struct
 {
-    uint32_t abi_version;
-
+    uint32_t    abi_version;
+    uint32_t    capabilities;  // OR of oshot_capabilities_t, informational only
     const char* name;          // display name, doesn't need to be unique
     const char* id;            // reverse-domain, e.g. "com.example.myplugin"
-    uint32_t    capabilities;  // OR of oshot_capabilities_t, informational only
 
     void* (*init)(void);
     void (*destroy)(void* state);

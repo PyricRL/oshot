@@ -30,6 +30,8 @@ struct override_config_value_t
 class TomlAPI
 {
 public:
+    TomlAPI() = default;
+    TomlAPI(toml::table tbl) : m_tbl(std::move(tbl)) {}
     virtual ~TomlAPI() = default;
 
     template <typename T>
@@ -39,9 +41,26 @@ public:
     }
 
     template <typename T>
+    void SetValue(const std::string_view name, const std::string_view key, const T& value)
+    {
+        toml::table* t = m_tbl[name].as_table();
+        if (t)
+            t->insert_or_assign(key, value);
+    }
+
+    template <typename T>
     T GetValue(const std::string_view key, const T& fallback, bool dont_expand_var = false) const
     {
         return GetValueImpl<T>(BuildKey(key), fallback, dont_expand_var);
+    }
+
+    template <typename T>
+    T GetValue(const std::string_view name,
+               const std::string_view key,
+               const T&               fallback,
+               bool                   dont_expand_var = false) const
+    {
+        return GetValueIntern(key, m_tbl[name][key].value<T>(), fallback, dont_expand_var);
     }
 
     /**
@@ -88,6 +107,28 @@ public:
         of.close();
 
         return fs::copy_file(temp_state, to, fs::copy_options::overwrite_existing);
+    }
+
+    // Ensures a sub-table exists for a given key. Returns a reference to the sub-table.
+    static toml::table& EnsureTable(toml::table& parent, const std::string_view key)
+    {
+        if (toml::node* node = parent[key].node())
+            if (toml::table* tbl = node->as_table())
+                return *tbl;
+
+        auto [it, inserted] = parent.insert(key, toml::table{});
+        return *it->second.as_table();
+    }
+
+    toml::table& EnsureTable(const std::string_view key) { return EnsureTable(m_tbl, key); }
+
+    // Converts a vector of strings to a toml::array
+    static toml::array VectorToArray(const std::vector<std::string>& vec)
+    {
+        toml::array ret;
+        for (const std::string& str : vec)
+            ret.push_back(str);
+        return ret;
     }
 
     /**
@@ -157,23 +198,14 @@ public:
     std::vector<std::string> GetValueArrayStr(const std::string_view          value,
                                               const std::vector<std::string>& fallback) const
     {
-        std::vector<std::string> ret;
+        return GetValueArrayStrIntern(m_tbl.at_path(value).as_array(), fallback);
+    }
 
-        // https://stackoverflow.com/a/78266628
-        if (const toml::array* array_it = m_tbl.at_path(value).as_array())
-        {
-            ret.reserve(array_it->size());
-            array_it->for_each([&](auto&& el) {
-                if (const toml::value<std::string>* str_elem = el.as_string())
-                    ret.push_back((*str_elem)->data());
-            });
-
-            return ret;
-        }
-        else
-        {
-            return fallback;
-        }
+    std::vector<std::string> GetValueArrayStr(const std::string_view          name,
+                                              const std::string_view          key,
+                                              const std::vector<std::string>& fallback) const
+    {
+        return GetValueArrayStrIntern(m_tbl[name][key].as_array(), fallback);
     }
 
     toml::table&       GetTbl() { return m_tbl; }
@@ -226,7 +258,44 @@ protected:
     template <typename T>
     T GetValueImpl(const std::string_view value, const T& fallback, bool dont_expand_var = false) const
     {
-        const auto& overridePos = m_overrides.find(value.data());
+        return GetValueIntern(value, m_tbl.at_path(value).value<T>(), fallback, dont_expand_var);
+    }
+
+private:
+    std::vector<std::string> GetValueArrayStrIntern(const toml::array*              array,
+                                                    const std::vector<std::string>& fallback) const
+    {
+        std::vector<std::string> ret;
+
+        // https://stackoverflow.com/a/78266628
+        if (const toml::array* array_it = array)
+        {
+            ret.reserve(array_it->size());
+            array_it->for_each([&](auto&& el) {
+                if (const toml::value<std::string>* str_elem = el.as_string())
+                    ret.push_back((*str_elem)->data());
+            });
+
+            return ret;
+        }
+        else
+        {
+            return fallback;
+        }
+    }
+
+    /**
+     * Get value of config variables
+     * @param value The config variable "path" (e.g "config.source-path")
+     * @param fallback Default value if couldn't retrive value
+     */
+    template <typename T>
+    T GetValueIntern(const std::string_view  key,
+                     const std::optional<T>& value,
+                     const T&                fallback,
+                     bool                    dont_expand_var = false) const
+    {
+        const auto& overridePos = m_overrides.find(std::string(key));
 
         if (overridePos != m_overrides.end())
         {
@@ -242,14 +311,13 @@ protected:
                     return ov.int_value;
         }
 
-        const std::optional<T>& ret = m_tbl.at_path(value).value<T>();
         if constexpr (toml::is_string<T>)
             if (!dont_expand_var)
-                return ret ? expand_var(ret.value()) : expand_var(fallback);
+                return value ? expand_var(value.value()) : expand_var(fallback);
             else
-                return ret ? ret.value() : fallback;
+                return value ? value.value() : fallback;
         else
-            return ret.value_or(fallback);
+            return value.value_or(fallback);
     }
 };
 

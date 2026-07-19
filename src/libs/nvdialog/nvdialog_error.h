@@ -42,9 +42,6 @@
 
 #define NVD_PRINT_CURRENT_ERROR nvd_print(nvd_stringify_error(nvd_get_error()))
 
-/* Sets the error code of the library */
-NVD_INTERNAL_FUNCTION void nvd_set_error(NvdError error);
-
 /*
  * A function that allows printing an error message to stderr, with support for
  * variadic arguments, proper formatting and easier integration with the

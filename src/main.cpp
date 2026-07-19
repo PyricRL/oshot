@@ -37,6 +37,7 @@
 #include "spdlog/sinks/ringbuffer_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "switch_fnv1a.hpp"
+#include "texts.hpp"
 #include "tinyfiledialogs.h"
 #include "tray.hpp"
 #include "util.hpp"

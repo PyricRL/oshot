@@ -133,9 +133,7 @@ add_custom_command(
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generateVersion.sh
     COMMENT "Generating version header"
 )
-add_custom_target(generate_version
-    DEPENDS ${VERSION_HEADER}
-)
+add_custom_target(generate_version DEPENDS ${VERSION_HEADER})
 add_dependencies(${PROJECT_NAME} generate_version)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<CONFIG:Debug>:DEBUG=1>)
@@ -144,7 +142,7 @@ target_compile_options(
     PRIVATE
         -Wall
         -Wextra
-        -pedantic
+        -Wpedantic
         -Wno-unused-parameter
         $<$<CONFIG:Debug>:-ggdb3;-fno-omit-frame-pointer>
 )
@@ -315,6 +313,53 @@ if(NOT DISABLE_PLUGINS)
             WINDOWS_EXPORT_ALL_SYMBOLS ON
             POSITION_INDEPENDENT_CODE ON
     )
+endif()
+
+# -----------------------------
+# oshot_plugman and oshotpm (oshot plugin manager, CLI)
+# -----------------------------
+if(NOT DISABLE_PLUGINS)
+    add_library(
+        oshot_plugman
+        SHARED
+        oshotpm/src/manifest.cpp
+        oshotpm/src/plugin_manager.cpp
+        oshotpm/src/state_manager.cpp
+    )
+    enable_lto(oshot_plugman)
+    target_compile_definitions(oshot_plugman PRIVATE $<$<CONFIG:Debug>:DEBUG=1>)
+    target_compile_options(
+        oshot_plugman
+        PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+            -Wno-unused-parameter
+            $<$<CONFIG:Debug>:-ggdb3;-fno-omit-frame-pointer>
+    )
+
+    target_include_directories(oshot_plugman PUBLIC oshotpm/include/)
+    target_compile_features(oshot_plugman PUBLIC cxx_std_20)
+    target_link_libraries(oshot_plugman PUBLIC oshot_plugin)
+
+    set_target_properties(
+        oshot_plugman
+        PROPERTIES
+            VERSION 1
+            SOVERSION 1
+            WINDOWS_EXPORT_ALL_SYMBOLS ON
+            POSITION_INDEPENDENT_CODE ON
+    )
+
+    add_executable(oshotpm oshotpm/src/main.cpp)
+    enable_lto(oshotpm)
+    set_target_properties(
+        oshotpm
+        PROPERTIES
+            BUILD_RPATH "${_rpath_origin}/../lib;$<TARGET_FILE_DIR:imgui>"
+            INSTALL_RPATH "${_rpath_origin}/../lib"
+    )
+    target_link_libraries(oshotpm PUBLIC oshot_plugman)
 endif()
 
 # -----------------------------

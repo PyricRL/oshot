@@ -1306,7 +1306,7 @@ void ScreenshotTool::DrawMenuItems()
             ImGui::TextUnformatted(version_infos.c_str());
 
             if (ImGui::Button("Copy text"))
-                g_clipboard.CopyText(version_infos);
+                MUST_OK(g_clipboard.CopyText(version_infos), error("Failed to copy text: {}", _r.error_v()));
             ImGui::EndChild();
             ImGui::TreePop();
         }

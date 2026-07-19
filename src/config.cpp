@@ -6,6 +6,7 @@
 
 #include "fmt/base.h"
 #include "fmt/os.h"
+#include "texts.hpp"
 #include "util.hpp"
 
 Config::Config(const fs::path& configFile, const fs::path& configDir)

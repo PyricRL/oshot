@@ -57,6 +57,16 @@ typedef enum {
 } NvdError;
 
 /**
+ * @brief Set the error code of the library.
+ *
+ * This was not supposed to be exposed,
+ * but only used for oshotpm when --cli-only is passed
+ *
+ * @ingroup Error
+ */
+NVD_API void nvd_set_error(NvdError error);
+
+/**
  * @brief Returns the current error code of the library.
  *
  * The error code has to be manually be transformed into a string

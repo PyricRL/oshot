@@ -2,6 +2,7 @@
 #define _UTIL_HPP_
 
 #include <filesystem>
+#include <iostream>
 #include <string>
 #include <utility>
 #include <variant>
@@ -11,6 +12,7 @@
 #include "fmt/color.h"
 #include "nvdialog/nvdialog_core.h"
 #include "nvdialog/nvdialog_dialog.h"
+#include "nvdialog/nvdialog_error.h"
 #include "spdlog/spdlog.h"
 #include "version.h"
 
@@ -34,8 +36,7 @@ enum class SavingOp;
 
 #define STBI_ERROR std::string(stbi_failure_reason() ? stbi_failure_reason() : "Unknown Error")
 
-// These macros are just for conviniences, nothing else
-// They kinda suck ngl
+// if Result is not ok(), return it's error
 #define TRY(expr)                     \
     do                                \
     {                                 \
@@ -44,6 +45,7 @@ enum class SavingOp;
             return Err(_r.error_v()); \
     } while (0)
 
+// TRY() with fmt::format()
 #define TRY_MSG(expr, fmtstr, ...)                                                    \
     do                                                                                \
     {                                                                                 \
@@ -52,6 +54,7 @@ enum class SavingOp;
             return Err(fmt::format(fmtstr __VA_OPT__(, ) __VA_ARGS__, _r.error_v())); \
     } while (0)
 
+// if Result is not ok(), execute on_err code
 #define MUST_OK(expr, on_err) \
     do                        \
     {                         \
@@ -84,12 +87,31 @@ struct Err
 {
     using value_type = E;
     E value;
+
+    Err() = default;
+
+    // Generic single-value ctor: Err(42), Err(some_error_code), Err(std::string{...})
+    template <typename U>
+        requires std::constructible_from<E, U&&> && (!std::same_as<std::remove_cvref_t<U>, Err>)
+    Err(U&& v) : value(std::forward<U>(v))
+    {}
+
+    // fmt-powered ctor: Err("failed: {}", code, ...)
+    template <typename... Args>
+        requires(sizeof...(Args) >= 1) && std::constructible_from<E, std::string>
+    Err(fmt::format_string<Args...> fmt_str, Args&&... args) : value(fmt::format(fmt_str, std::forward<Args>(args)...))
+    {}
 };
 template <typename E>
 Err(E) -> Err<E>;
+Err(const char*) -> Err<std::string>;
+
+template <typename... Args>
+    requires(sizeof...(Args) >= 1)
+Err(fmt::format_string<Args...>, Args&&...) -> Err<std::string>;
 
 template <typename T = Ok<void>, typename E = Err<std::string>>
-class Result
+class [[nodiscard("Must check if ok")]] Result
 {
 public:
     template <typename U>
@@ -142,7 +164,7 @@ private:
 };
 
 template <typename E>
-class Result<Ok<void>, E>
+class [[nodiscard("Must check if ok")]] Result<Ok<void>, E>
 {
 public:
     Result() : m_ok(true) {}
@@ -323,6 +345,9 @@ bool parse_hex_rgba(const std::string_view hex, rgba_t& out);
 
 static void create_dialog(const char* title, const NvdDialogType type, const std::string& str) noexcept
 {
+    if (nvd_get_error() == NVD_NOT_INITIALIZED)
+        return;
+
     NvdDialogBox* dialog = nvd_dialog_box_new(title, str.c_str(), type);
     nvd_show_dialog(dialog);
     nvd_free_object(dialog);
@@ -372,13 +397,44 @@ inline void info(const std::string_view fmt, Args&&... args) noexcept
  * @returns the result, y = true, n = false, only returns def if the result is def
  */
 template <typename... Args>
-inline bool ask_user_yn(bool, const std::string_view fmt, Args&&... args)
+inline bool ask_user_yn(bool def, const std::string_view fmt, Args&&... args)
 {
-    const std::string& str      = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...);
-    NvdQuestionBox*    question = nvd_dialog_question_new("Confirmation", str.c_str(), NVD_YES_NO);
-    if (!question)
-        die("Couldn't create question dialog box");
-    return nvd_get_reply(question) == NVD_REPLY_OK;
+    const std::string& str = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...);
+    if (nvd_get_error() == NVD_NOT_INITIALIZED)
+    {
+#ifdef _WIN32
+        int result = MessageBox(NULL, str.c_str(), "Confirmation", MB_YESNO | MB_ICONQUESTION);
+        return (result == IDYES);
+#else
+        const std::string_view inputs_str = def ? "[Y/n]" : "[y/N]";
+        std::string            result;
+        fmt::print("{} {}: ", str, inputs_str);
+
+        while (std::getline(std::cin, result) && (result.length() > 1))
+        {
+            fmt::print(BOLD_COLOR(fmt::rgb(fmt::color::yellow)), "Please answear y or n\n");
+            fmt::print("{} {}: ", str, inputs_str);
+        }
+
+        if (std::cin.eof())
+            die("Exiting due to CTRL-D or EOF");
+
+        if (result.empty())
+            return def;
+
+        if (def ? std::tolower(result[0]) != 'n' : std::tolower(result[0]) != 'y')
+            return def;
+
+        return !def;
+#endif
+    }
+    else
+    {
+        NvdQuestionBox* question = nvd_dialog_question_new("Confirmation", str.c_str(), NVD_YES_NO);
+        if (!question)
+            die("Couldn't create question dialog box");
+        return nvd_get_reply(question) == NVD_REPLY_OK;
+    }
 }
 
 // RAII guard: ensures glfwTerminate() runs even on crash/signal.

@@ -3,11 +3,10 @@
 #ifndef DISABLE_PLUGINS
 #  include <unordered_map>
 
+#  include "../oshotpm/include/manifest.hpp"
 #  include "../src/plugins/oshot_plugin.h"
 #  include "dylib.hpp"
 #  include "toml_api.hpp"
-
-namespace fs = std::filesystem;
 
 struct plugin_runtime_t;
 
@@ -72,6 +71,6 @@ struct plugin_runtime_t
     plugin_runtime_t(plugin_runtime_t&&)                 = default;
 };
 
-void load_plugins();
+void load_plugins(const std::vector<manifest_t>& repos);
 
 #endif

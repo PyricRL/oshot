@@ -34,6 +34,8 @@ enum class SavingOp;
 #  define OSHOT_TOOL_ON_MAIN_THREAD false
 #endif
 
+#define UNKNOWN "<u2n4kn6ow8n>"
+
 #define STBI_ERROR std::string(stbi_failure_reason() ? stbi_failure_reason() : "Unknown Error")
 
 // if Result is not ok(), return it's error
@@ -46,12 +48,12 @@ enum class SavingOp;
     } while (0)
 
 // TRY() with fmt::format()
-#define TRY_MSG(expr, fmtstr, ...)                                                    \
-    do                                                                                \
-    {                                                                                 \
-        auto&& _r = (expr);                                                           \
-        if (!_r.ok())                                                                 \
-            return Err(fmt::format(fmtstr __VA_OPT__(, ) __VA_ARGS__, _r.error_v())); \
+#define TRY_MSG(expr, fmtstr, ...)                                       \
+    do                                                                   \
+    {                                                                    \
+        auto&& _r = (expr);                                              \
+        if (!_r.ok())                                                    \
+            return Err(fmtstr __VA_OPT__(, ) __VA_ARGS__, _r.error_v()); \
     } while (0)
 
 // if Result is not ok(), execute on_err code

@@ -31,19 +31,23 @@
 #include "fmt/os.h"
 #include "fmt/ranges.h"
 #include "manifest.hpp"
-#include "nvdialog/nvdialog_error.h"
 #include "plugin_manager.hpp"
 #include "state_manager.hpp"
 #include "texts.hpp"
 #include "util.hpp"
 
-#if (!__has_include("version.h"))
-#  error "version.h not found, please generate it with ../scripts/generateVersion.sh"
-#else
-#  include "version.h"
-#endif
-
+/* If include before manifest.hpp
+ * /usr/include/bits/getopt_core.h:91:12: error: declaration of ‘int getopt(int, char* const*, const char*) noexcept’ has a different exception specifier
+ *  91 | extern int getopt (int ___argc, char *const *___argv, const char *__shortopts)
+ *     |            ^~~~~~
+ * In file included from oshot/oshotpm/src/main.cpp:33:
+ * oshot/include/libs/getopt_port/getopt.h:50:5: note: from previous declaration ‘int getopt(int, char* const*, const char*)’
+ *  50 | int getopt(int argc, char* const argv[], const char* optstring);
+ *     |     ^~~~~~
+ */
+// clang-format off
 #include "getopt_port/getopt.h"
+// clang-format on
 
 enum OPs
 {
@@ -72,17 +76,7 @@ OPs str_to_enum(const std::string_view name)
 
 void version()
 {
-    fmt::print(
-        "oshotpm {} built from branch '{}' at {} commit '{}' ({}).\n"
-        "Date: {}\n"
-        "Tag: {}\n",
-        VERSION,
-        GIT_BRANCH,
-        GIT_DIRTY,
-        GIT_COMMIT_HASH,
-        GIT_COMMIT_MESSAGE,
-        GIT_COMMIT_DATE,
-        GIT_TAG);
+    fmt::print(FMT_COMPILE("{}"), version_infos);
 
     // if only everyone would not return error when querying the program version :(
     std::exit(EXIT_SUCCESS);
@@ -198,13 +192,12 @@ static bool parseargs(int argc, char* argv[])
     static const struct option opts[] = {
         {"version", no_argument, 0, 'V'},
         {"help",    no_argument, 0, 'h'},
-        {"dialogs", no_argument, 0, 'D'},
         {0,0,0,0}
     };
 
     // clang-format on
     optind = 1;
-    while ((opt = getopt_long(argc, argv, "+VhD", opts, nullptr)) != -1)
+    while ((opt = getopt_long(argc, argv, "+Vh", opts, nullptr)) != -1)
     {
         switch (opt)
         {
@@ -213,7 +206,6 @@ static bool parseargs(int argc, char* argv[])
 
             case 'V': version(); break;
             case 'h': help(); break;
-            case 'D': options.cli_only_logging = false; break;
             default:  return false;
         }
     }
@@ -255,59 +247,92 @@ static bool parseargs(int argc, char* argv[])
     return true;
 }
 
+static void switch_plugin_path(const std::string&     arg,
+                               fs::path&              base_path,
+                               bool                   switch_,
+                               const std::string_view switch_str)
+
+{
+    if (base_path.extension() == ".disabled")
+        base_path.replace_extension();  // normalize to enabled form
+
+    const fs::path& enabled_path  = base_path;
+    const fs::path& disabled_path = base_path.string() + ".disabled";
+
+    fs::path current_path;
+    if (fs::exists(enabled_path))
+        current_path = enabled_path;
+    else if (fs::exists(disabled_path))
+        current_path = disabled_path;
+    else
+    {
+        warn("Plugin library '{}' not found. Skipping", base_path.string());
+        return;
+    }
+
+    const fs::path& target_path = switch_ ? enabled_path : disabled_path;
+    if (current_path == target_path)
+    {
+        warn("{} is already {}ed", arg, switch_str);
+        return;
+    }
+
+    fs::rename(current_path, target_path);
+    info("{}ed {}!", switch_str, arg);
+}
+
 void switch_plugin(const StateManager& state, bool switch_)
 {
-    const char*        switch_str = switch_ ? "Enabl" : "Disabl";  // e/ed/ing
-    const toml::table& tbl        = state.GetState();
+    const std::string_view switch_str = switch_ ? "Enabl" : "Disabl";  // e/ed/ing
 
     for (const std::string& arg : options.arguments)
     {
-        const size_t pos = arg.find('/');
-        if (pos == arg.npos)
-            die("Plugin to {}e '{}' doesn't have a slash '/' to separate repository and plugin", switch_str, arg);
-
-        const std::string& repo   = arg.substr(0, pos);
-        const std::string& plugin = arg.substr(pos + 1);
-
-        const auto* repo_tbl = tbl["repositories"][repo].as_table();
-        if (!repo_tbl)
-            die("No such repository '{}'", repo);
-        if (const auto* plugins_arr_tbl = repo_tbl->get_as<toml::array>("plugins"))
+        const size_t slash_pos = arg.find('/');
+        if (slash_pos == arg.npos)
         {
-            for (const auto& plugin_node : *plugins_arr_tbl)
+            const toml::table* repositories = state.GetState()["repositories"].as_table();
+            if (!repositories)
+                return;
+
+            for (const auto& [repo_name, repo_node] : *repositories)
             {
-                const toml::table* plugin_tbl = plugin_node.as_table();
-                if (!plugin_tbl || TomlAPI(*plugin_tbl).GetValue<std::string>("name", "(unknown)") != plugin)
+                const toml::table* repo_tbl = repo_node.as_table();
+                if (!repo_tbl)
                     continue;
 
-                for (fs::path base_path : TomlAPI(*plugin_tbl).GetValueArrayStr("libraries", {}))
+                if (const toml::array* plugins = repo_tbl->get_as<toml::array>("plugins"))
                 {
-                    if (base_path.extension() == ".disabled")
-                        base_path.replace_extension();  // normalize to enabled form
-
-                    const fs::path& enabled_path  = base_path;
-                    const fs::path& disabled_path = base_path.string() + ".disabled";
-
-                    fs::path current_path;
-                    if (fs::exists(enabled_path))
-                        current_path = enabled_path;
-                    else if (fs::exists(disabled_path))
-                        current_path = disabled_path;
-                    else
+                    for (const auto& plugin_node : *plugins)
                     {
-                        warn("Plugin library '{}' not found. Skipping", base_path.string());
-                        continue;
+                        const toml::table* plugin_tbl = plugin_node.as_table();
+                        if (!plugin_tbl)
+                            continue;
+                        TomlAPI plugin_api(*plugin_tbl);
+                        if (arg == plugin_api.GetValue<std::string>("id", UNKNOWN))
+                            for (fs::path base_path : plugin_api.GetValueArrayStr("libraries", {}))
+                                switch_plugin_path(arg, base_path, switch_, switch_str);
                     }
+                }
+            }
+        }
+        else
+        {
+            const std::string& repo   = arg.substr(0, slash_pos);
+            const std::string& plugin = arg.substr(slash_pos + 1);
 
-                    const fs::path& target_path = switch_ ? enabled_path : disabled_path;
-                    if (current_path == target_path)
-                    {
-                        warn("{} is already {}ed", arg, switch_str);
+            const toml::table* repo_tbl = state.GetState()["repositories"][repo].as_table();
+            if (!repo_tbl)
+                die("No such repository '{}'", repo);
+            if (const auto* plugins_arr_tbl = repo_tbl->get_as<toml::array>("plugins"))
+            {
+                for (const auto& plugin_node : *plugins_arr_tbl)
+                {
+                    const toml::table* plugin_tbl = plugin_node.as_table();
+                    if (!plugin_tbl || TomlAPI(*plugin_tbl).GetValue<std::string>("name", "(unknown)") != plugin)
                         continue;
-                    }
 
-                    fs::rename(current_path, target_path);
-                    info("{}ed {}!", switch_str, arg);
+                    for (fs::path base_path : TomlAPI(*plugin_tbl).GetValueArrayStr("libraries", {}))
+                        switch_plugin_path(arg, base_path, switch_, switch_str);
                 }
             }
         }
@@ -373,6 +398,16 @@ void list_all_plugins(const StateManager& state)
     }
 }
 
+namespace ansi
+{
+    constexpr const char* reset  = "\033[0m";
+    constexpr const char* cyan   = "\033[1;36m";
+    constexpr const char* blue   = "\033[1;34m";
+    constexpr const char* green  = "\033[1;32m";
+    constexpr const char* yellow = "\033[1;33m";
+    constexpr const char* red    = "\033[1;31m";
+}  // namespace ansi
+
 int main(int argc, char* argv[])
 {
     if (!parseargs(argc, argv))
@@ -380,26 +415,31 @@ int main(int argc, char* argv[])
 
     fs::create_directories({ get_home_cache_dir() / "oshotpm" });
     fs::create_directories({ get_config_dir() / "plugins" });
+
+    // For logging methods in util.hpp to not popup
+    // a dialog box
+    nvd_set_error(NVD_NOT_INITIALIZED);
+
+    PluginCallbacks cb;
+    cb.on_status  = [](const std::string_view msg) { fmt::print("{}==> {}...{}\n", ansi::blue, msg, ansi::reset); };
+    cb.on_success = [](const std::string_view msg) { fmt::print("{}[OK] {}{}\n", ansi::green, msg, ansi::reset); };
+    cb.on_info    = [](const std::string_view msg) { fmt::print("{}[INFO] {}{}\n", ansi::cyan, msg, ansi::reset); };
+    cb.on_error   = [](const std::string_view msg) { fmt::print("{}[ERR] {}{}\n", ansi::red, msg, ansi::reset); };
+    cb.on_warning = [](const std::string_view msg) { fmt::print("{}[WARN] {}{}\n", ansi::yellow, msg, ansi::reset); };
+    cb.confirm    = [](const std::string_view prompt, bool default_answer) {
+        if (options.install_shut_up)
+            return default_answer;
+        return ask_user_yn(default_answer, "{}", prompt);
+    };
+
     StateManager state;
-
-    if (!options.cli_only_logging)
-    {
-        nvd_set_error(NVD_NOT_INITIALIZED);
-    }
-    else if (nvd_init() != 0)
-    {
-        fmt::print(
-            stderr, "Failed to initialize nvdialog: {}\n", nvd_string_to_cstr(nvd_stringify_error(nvd_get_error())));
-        return -67;
-    }
-
     switch (op)
     {
         case INSTALL:
         {
             if (options.arguments.size() < 1)
                 die("Please provide a plugin repository to install");
-            PluginManager plugin_manager(std::move(state));
+            PluginManager plugin_manager(std::move(state), cb);
             for (const std::string& arg : options.arguments)
             {
                 if (fs::exists(arg))
@@ -435,7 +475,7 @@ int main(int argc, char* argv[])
         }
         case UPDATE:
         {
-            PluginManager plugin_manager(std::move(state));
+            PluginManager plugin_manager(std::move(state), cb);
             MUST_OK(plugin_manager.UpdateRepos(), error("Failed to update repositories: {}", _r.error_v()));
             break;
         }
@@ -444,7 +484,7 @@ int main(int argc, char* argv[])
             if (options.arguments.size() < 1)
                 die("Please provide a plugin repository to uninstall");
 
-            PluginManager plugin_manager(std::move(state));
+            PluginManager plugin_manager(std::move(state), cb);
             for (const std::string& arg : options.arguments)
                 MUST_OK(plugin_manager.RemoveRepo(arg), error("Failed to remove repository: {}", _r.error_v()));
             break;

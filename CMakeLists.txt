@@ -115,12 +115,17 @@ endif()
 # -----------------------------
 # Main executable
 # -----------------------------
-add_executable(
-    ${PROJECT_NAME}
+set(OSHOT_SOURCES
     src/main.cpp
     src/main_tool_opengl3.cpp
     src/libs/getopt_port/getopt.c
 )
+
+if(NOT DISABLE_PLUGINS)
+    list(APPEND OSHOT_SOURCES src/plugins.cpp)
+endif()
+
+add_executable(${PROJECT_NAME} ${OSHOT_SOURCES})
 enable_lto(${PROJECT_NAME})
 
 set(VERSION_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h)
@@ -185,7 +190,7 @@ set_target_properties(
 # -----------------------------
 add_library(
     oshot_common
-    OBJECT
+    STATIC
     src/cache.cpp
     src/clipboard.cpp
     src/config.cpp
@@ -194,16 +199,10 @@ add_library(
     src/screenshot_tool.cpp
     src/text_extraction.cpp
     src/util.cpp
-    src/libs/toml++/toml.cpp
-    src/libs/tinyfiledialogs/tinyfiledialogs.c
 )
 
 if(OSHOT_OPTION_DEFINITIONS)
     target_compile_definitions(oshot_common PUBLIC ${OSHOT_OPTION_DEFINITIONS})
-endif()
-
-if(NOT DISABLE_PLUGINS)
-    target_sources(oshot_common PRIVATE src/plugins.cpp)
 endif()
 
 enable_lto(oshot_common)
@@ -211,7 +210,7 @@ enable_lto(oshot_common)
 if(WIN32)
     target_link_libraries(oshot_common PRIVATE ws2_32 shcore d3d11 dxgi)
     if(MINGW)
-        target_link_options(${PROJECT_NAME} PRIVATE -Wl,--export-all-symbols)
+        target_link_options(oshot_common PRIVATE -Wl,--export-all-symbols)
     endif()
 elseif(APPLE)
     target_compile_options(
@@ -261,6 +260,8 @@ target_link_libraries(
     oshot_common
     PUBLIC
         fmt
+        toml++
+        tfd
         imgui
         tray
         clip
@@ -274,7 +275,7 @@ target_link_libraries(
     PRIVATE Threads::Threads
 )
 if(NOT DISABLE_PLUGINS)
-    target_link_libraries(oshot_common PUBLIC dylib)
+    target_link_libraries(oshot_common PRIVATE dylib)
 endif()
 
 target_compile_definitions(
@@ -303,7 +304,7 @@ if(NOT DISABLE_PLUGINS)
 
     target_compile_features(oshot_plugin PUBLIC cxx_std_20)
 
-    target_link_libraries(oshot_plugin PUBLIC oshot_common)
+    target_link_libraries(oshot_plugin PUBLIC oshot_common PRIVATE liboshotpm)
 
     set_target_properties(
         oshot_plugin
@@ -316,21 +317,25 @@ if(NOT DISABLE_PLUGINS)
 endif()
 
 # -----------------------------
-# oshot_plugman and oshotpm (oshot plugin manager, CLI)
+# liboshotpm and oshotpm (oshot plugin manager, CLI)
 # -----------------------------
 if(NOT DISABLE_PLUGINS)
     add_library(
-        oshot_plugman
+        liboshotpm
         SHARED
         oshotpm/src/manifest.cpp
         oshotpm/src/plugin_manager.cpp
         oshotpm/src/state_manager.cpp
     )
-    enable_lto(oshot_plugman)
-    target_compile_definitions(oshot_plugman PRIVATE $<$<CONFIG:Debug>:DEBUG=1>)
+    enable_lto(liboshotpm)
+    set_target_properties(liboshotpm PROPERTIES PREFIX "")
+    target_compile_definitions(
+        liboshotpm
+        PUBLIC $<$<CONFIG:Debug>:DEBUG=1> VERSION="${PROJECT_VERSION}"
+    )
     target_compile_options(
-        oshot_plugman
-        PRIVATE
+        liboshotpm
+        PUBLIC
             -Wall
             -Wextra
             -Wpedantic
@@ -338,12 +343,15 @@ if(NOT DISABLE_PLUGINS)
             $<$<CONFIG:Debug>:-ggdb3;-fno-omit-frame-pointer>
     )
 
-    target_include_directories(oshot_plugman PUBLIC oshotpm/include/)
-    target_compile_features(oshot_plugman PUBLIC cxx_std_20)
-    target_link_libraries(oshot_plugman PUBLIC oshot_plugin)
+    target_include_directories(
+        liboshotpm
+        PUBLIC include/ include/libs/ oshotpm/include/
+    )
+    target_compile_features(liboshotpm PUBLIC cxx_std_20)
+    target_link_libraries(liboshotpm PUBLIC oshot_common)
 
     set_target_properties(
-        oshot_plugman
+        liboshotpm
         PROPERTIES
             VERSION 1
             SOVERSION 1
@@ -359,7 +367,7 @@ if(NOT DISABLE_PLUGINS)
             BUILD_RPATH "${_rpath_origin}/../lib;$<TARGET_FILE_DIR:imgui>"
             INSTALL_RPATH "${_rpath_origin}/../lib"
     )
-    target_link_libraries(oshotpm PUBLIC oshot_plugman)
+    target_link_libraries(oshotpm PRIVATE liboshotpm)
 endif()
 
 # -----------------------------
@@ -373,6 +381,27 @@ enable_lto(fmt)
 target_include_directories(fmt PUBLIC include/libs)
 target_compile_features(fmt PUBLIC cxx_std_20)
 target_compile_definitions(fmt PUBLIC FMT_HEADER_ONLY=0)
+
+# -----------------------------
+# toml++ library
+# -----------------------------
+
+add_library(toml++ STATIC src/libs/toml++/toml.cpp)
+enable_lto(toml++)
+
+target_include_directories(toml++ PUBLIC include/libs)
+target_compile_features(toml++ PUBLIC cxx_std_20)
+target_compile_definitions(toml++ PUBLIC TOML_HEADER_ONLY=0)
+
+# -----------------------------
+# tfd (tinyfiledialogs) library
+# -----------------------------
+
+add_library(tfd STATIC src/libs/tinyfiledialogs/tinyfiledialogs.c)
+enable_lto(tfd)
+
+target_include_directories(tfd PUBLIC include/libs)
+set_target_properties(tfd PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
 
 # -----------------------------
 # imgui library

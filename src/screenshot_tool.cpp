@@ -349,7 +349,7 @@ Result<> ScreenshotTool::StartWindow()
 {
 #ifndef DISABLE_PLUGINS
     static std::once_flag plugins_loaded;
-    std::call_once(plugins_loaded, [] { load_plugins(); });
+    std::call_once(plugins_loaded, [&] { load_plugins(m_plugin_manager.GetStateManager().GetAllRepos()); });
 #endif
 
     m_inputs = { g_config->File.ocr_path,
@@ -2412,7 +2412,8 @@ void ScreenshotTool::DrawLogsWindow()
             case spdlog::level::warn:     return rgba_t(0xFFCC33FF);  // amber
             case spdlog::level::err:      return rgba_t(0xFF4D4DFF);  // red
             case spdlog::level::critical: return rgba_t(0xFF0000FF);  // pure red
-            default:                      return rgba_t(0xFFFFFFFF);  // white
+
+            default: return rgba_t(0xFFFFFFFF);  // white
         }
     };
 

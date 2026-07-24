@@ -45,11 +45,11 @@
 struct plugin_t
 {
     // The plugin name.
-    // It must be conform to the function is_valid_name()
+    // It must be conform to the function IsValidName()
     std::string name;
 
     // The plugin ID.
-    // It must be conform to the function is_valid_name()
+    // It must be conform to the function IsValidID()
     std::string id;
 
     // The plugin description.
@@ -62,6 +62,10 @@ struct plugin_t
     // The plugin SPDX Licenses Identifier (MIT, GPL-2.0, ...)
     // Not valided.
     std::vector<std::string> licenses;
+
+    // The state 'repositories.repo-name.plugins.libraries' field.
+    // NOTE: MUST be populated only by the state manager.
+    std::vector<std::string> libraries;
 
     // The plugin authors.
     std::vector<std::string> authors;
@@ -102,20 +106,22 @@ constexpr char const MANIFEST_NAME[] = "oshot-plugin.toml";
 class Manifest
 {
 public:
-    Manifest(const std::filesystem::path& path);
+    Manifest(const fs::path& path);
 
     plugin_t GetPlugin(const std::string_view name) const;
     Result<> ParseManifest();
 
     const manifest_t& GetRepo() const { return m_repo; }
     bool              IsParsed() const { return m_is_parsed; }
+    static bool       IsValidID(const std::string_view id);
+    static bool       IsValidName(const std::string_view name);
 
 private:
     fs::path   m_path;
     TomlAPI    m_toml;
     manifest_t m_repo;
 
-    bool m_is_parsed;
+    bool m_is_parsed{};
 };
 
 #endif  // !_MANIFEST_HPP_;

@@ -55,10 +55,10 @@ public:
     }
 
     template <typename T>
-    T GetValue(const std::string_view name,
-               const std::string_view key,
-               const T&               fallback,
-               bool                   dont_expand_var = false) const
+    T GetValueFromTable(const std::string_view name,
+                        const std::string_view key,
+                        const T&               fallback,
+                        bool                   dont_expand_var = false) const
     {
         return GetValueIntern(key, m_tbl[name][key].value<T>(), fallback, dont_expand_var);
     }

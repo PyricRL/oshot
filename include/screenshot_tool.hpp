@@ -19,6 +19,10 @@
 #include "text_extraction.hpp"
 #include "util.hpp"
 
+#ifndef DISABLE_PLUGINS
+#  include "../oshotpm/include/plugin_manager.hpp"
+#endif
+
 enum class ToolType : size_t
 {
     kNone,
@@ -226,6 +230,10 @@ struct ErrorContext : public GeneralContext<Enum>
 class ScreenshotTool
 {
 public:
+#ifndef DISABLE_PLUGINS
+    ScreenshotTool(StateManager&& state) : m_plugin_manager(std::move(state), m_plugin_cb) {}
+#endif
+
     Result<>             Start();
     Result<>             StartWindow();
     Result<ImTextureRef> CreateTexture(void* tex, std::span<const uint8_t> data, int w, int h);
@@ -351,6 +359,11 @@ private:
     rgba_t                                         m_current_color;
     std::unordered_map<std::string, std::string*>  m_imgui_id_texts;
     std::array<float, idx(ToolType::Count)>        m_tool_thickness;
+
+#ifndef DISABLE_PLUGINS
+    PluginManager   m_plugin_manager;
+    PluginCallbacks m_plugin_cb;
+#endif
 
     void CreateCopyTextButton(const std::string& text);
     void RefreshOcrModels();

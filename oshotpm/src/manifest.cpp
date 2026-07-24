@@ -33,31 +33,52 @@
 #include "tiny-process-library/process.hpp"
 #include "util.hpp"
 
-namespace fs = std::filesystem;
-
-static bool is_valid_name(const std::string_view n)
+bool Manifest::IsValidName(const std::string_view name)
 {
-    return std::ranges::all_of(n,
-                               [](const unsigned char c) { return (isalnum(c) || c == '-' || c == '_' || c == '='); });
+    return (!name.empty() || std::ranges::all_of(name,
+                               [](const unsigned char c) { return (isalnum(c) || c == '-' || c == '_' || c == '='); }));
+}
+
+// Taken from geode-sdk's ModMetadata::validateID()
+// But we allow multiple dots instead of one
+bool Manifest::IsValidID(const std::string_view id)
+{
+    // IDs may not be empty nor exceed 64 characters
+    if (id.size() == 0 || id.size() > 64)
+        return false;
+
+    bool found_dot = false;
+    for (const char c : id)
+    {
+        if (!(('a' <= c && c <= 'z') || ('0' <= c && c <= '9') || (c == '-' || c == '_' || c == '.')))
+            return false;
+        if (c == '.')
+            found_dot = true;
+    }
+
+    // At least one dot required
+    return found_dot;
 }
 
 Manifest::Manifest(const fs::path& path) : m_path(path)
-{
-    m_toml.LoadFile(path.string());
-}
+{}
 
 Result<> Manifest::ParseManifest()
 {
     if (IsParsed())
         return Ok();
 
+    if (!fs::exists(m_path))
+        return Err("Path '{}' doesn't exist", m_path.string());
+
+    m_toml.LoadFile(m_path.string());
     static std::string str_stderr;
 
-    m_repo.name = m_toml.GetValue<std::string>("repository.name", "_\3");
+    m_repo.name = m_toml.GetValue<std::string>("repository.name", UNKNOWN);
     m_repo.url  = m_toml.GetValue<std::string>("repository.url", "");
-    if (m_repo.name == "_\3")
+    if (m_repo.name.empty() || m_repo.name == UNKNOWN)
         return Err("Couldn't find manifest repository name");
-    if (!is_valid_name(m_repo.name))
+    if (!IsValidName(m_repo.name))
         return Err(
             "Manifest repository name '{}' is invalid. Only alphanumeric and '-', '_', '=' are allowed in the name",
             m_repo.name);
@@ -76,31 +97,41 @@ Result<> Manifest::ParseManifest()
     m_repo.dependencies.insert(m_repo.dependencies.end(), deps_all.begin(), deps_all.end());
     m_repo.dependencies.insert(m_repo.dependencies.end(), deps_plat.begin(), deps_plat.end());
 
+    Result<> invalidated_err = Ok();
     for (const auto& [name, _] : m_toml.GetTbl())
     {
         if (name.str() == "repository" || name.str() == "dependencies")
             continue;
 
-        if (!is_valid_name(name.str()))
+        if (!IsValidName(name.str()))
         {
-            warn("Plugin '{}' has an invalid name. Only alphanumeric and '-', '_', '=' are allowed in the name",
+            invalidated_err = Err("Plugin '{}' has an invalid name. Only alphanumeric and '-', '_', '=' are allowed in the name",
                  name.str());
             continue;
         }
 
-        m_repo.plugins.push_back(GetPlugin(name));
+        plugin_t plugin = GetPlugin(name);
+        if (!IsValidID(plugin.id))
+        {
+            invalidated_err = Err("Plugin '{}' has an invalid ID. Only alphanumeric and '-', '_', '=', '.' are allowed in the ID",
+                 plugin.id);
+            continue;
+        }
+
+        m_repo.plugins.emplace_back(std::move(plugin));
     }
 
-    return Ok();
+    return invalidated_err;
 }
 
 plugin_t Manifest::GetPlugin(const std::string_view name) const
 {
     return { .name        = name.data(),
-             .id          = m_toml.GetValue<std::string>(name, "id", "(unknown)"),
-             .description = m_toml.GetValue<std::string>(name, "description", "(unknown)"),
-             .output_dir  = m_toml.GetValue<std::string>(name, "output-dir", "(unknown)"),
+             .id          = m_toml.GetValueFromTable<std::string>(name, "id", UNKNOWN),
+             .description = m_toml.GetValueFromTable<std::string>(name, "description", UNKNOWN),
+             .output_dir  = m_toml.GetValueFromTable<std::string>(name, "output-dir", UNKNOWN),
              .licenses    = m_toml.GetValueArrayStr(name, "licenses", {}),
+             .libraries   = {},  // MUST be populated only in StateManager
              .authors     = m_toml.GetValueArrayStr(name, "authors", {}),
              .build_steps = m_toml.GetValueArrayStr(name, "build-steps", {}),
              .platforms   = m_toml.GetValueArrayStr(name, "platforms", {}) };

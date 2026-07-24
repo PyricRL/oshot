@@ -2,16 +2,19 @@
 #include "clipboard.hpp"
 #include "config.hpp"
 #ifndef DISABLE_PLUGINS
+#  include "../oshotpm/include/state_manager.hpp"
 #  include "plugin.hpp"
 #endif
 #include "screenshot_tool.hpp"
 #include "util.hpp"
 
+static StateManager _s;
+
 // Extern variables declariaions
 std::deque<std::string> g_dropped_paths;
 std::unique_ptr<Config> g_config;
 std::unique_ptr<Cache>  g_cache;
-ScreenshotTool          g_ss_tool;
+ScreenshotTool          g_ss_tool(std::move(_s));
 bool                    g_is_systray = false;
 int                     g_scr_w{}, g_scr_h{};
 Clipboard               g_clipboard(SessionType::Unknown);

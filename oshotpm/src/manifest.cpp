@@ -35,8 +35,9 @@
 
 bool Manifest::IsValidName(const std::string_view name)
 {
-    return (!name.empty() || std::ranges::all_of(name,
-                               [](const unsigned char c) { return (isalnum(c) || c == '-' || c == '_' || c == '='); }));
+    return (!name.empty() || std::ranges::all_of(name, [](const unsigned char c) {
+        return (isalnum(c) || c == '-' || c == '_' || c == '=');
+    }));
 }
 
 // Taken from geode-sdk's ModMetadata::validateID()
@@ -105,16 +106,18 @@ Result<> Manifest::ParseManifest()
 
         if (!IsValidName(name.str()))
         {
-            invalidated_err = Err("Plugin '{}' has an invalid name. Only alphanumeric and '-', '_', '=' are allowed in the name",
-                 name.str());
+            invalidated_err =
+                Err("Plugin '{}' has an invalid name. Only alphanumeric and '-', '_', '=' are allowed in the name",
+                    name.str());
             continue;
         }
 
         plugin_t plugin = GetPlugin(name);
         if (!IsValidID(plugin.id))
         {
-            invalidated_err = Err("Plugin '{}' has an invalid ID. Only alphanumeric and '-', '_', '=', '.' are allowed in the ID",
-                 plugin.id);
+            invalidated_err =
+                Err("Plugin '{}' has an invalid ID. Only alphanumeric and '-', '_', '=', '.' are allowed in the ID",
+                    plugin.id);
             continue;
         }
 

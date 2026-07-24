@@ -34,7 +34,7 @@
 
 #include "manifest.hpp"
 #include "state_manager.hpp"
-#include "toml++/toml.h"
+#include "toml++/toml.hpp"
 #include "util.hpp"
 
 // options

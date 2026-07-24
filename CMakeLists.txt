@@ -115,17 +115,13 @@ endif()
 # -----------------------------
 # Main executable
 # -----------------------------
-set(OSHOT_SOURCES
+add_executable(
+    ${PROJECT_NAME}
     src/main.cpp
     src/main_tool_opengl3.cpp
     src/libs/getopt_port/getopt.c
 )
 
-if(NOT DISABLE_PLUGINS)
-    list(APPEND OSHOT_SOURCES src/plugins.cpp)
-endif()
-
-add_executable(${PROJECT_NAME} ${OSHOT_SOURCES})
 enable_lto(${PROJECT_NAME})
 
 set(VERSION_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h)
@@ -150,6 +146,14 @@ target_compile_options(
         -Wpedantic
         -Wno-unused-parameter
         $<$<CONFIG:Debug>:-ggdb3;-fno-omit-frame-pointer>
+)
+target_include_directories(
+    ${PROJECT_NAME}
+    PUBLIC include/ include/libs ${LEPTONICA_INCLUDE_DIRS}
+)
+target_compile_definitions(
+    ${PROJECT_NAME}
+    PUBLIC VERSION="${PROJECT_VERSION}" TOML_HEADER_ONLY=0
 )
 
 # oshot_plugin PUBLIC-links oshot_common (see below), so linking oshot_plugin
@@ -300,12 +304,62 @@ target_compile_features(oshot_common PUBLIC cxx_std_20)
 # oshot's plugin library
 # -----------------------------
 if(NOT DISABLE_PLUGINS)
-    add_library(oshot_plugin SHARED src/plugins/oshot_plugins.cpp)
+    add_library(
+        oshot_plugin
+        SHARED
+        src/plugins/oshot_plugins.cpp
+        src/plugins.cpp
+    )
 
-    target_compile_features(oshot_plugin PUBLIC cxx_std_20)
+    if((UNIX AND NOT APPLE) OR MINGW)
+        # Force all of oshot_common into the plugin
+        target_link_libraries(
+            oshot_plugin
+            PRIVATE
+                -Wl,--whole-archive
+                oshot_common
+                -Wl,--no-whole-archive
+                liboshotpm
+        )
+    else()
+        target_link_libraries(oshot_plugin PRIVATE oshot_common liboshotpm)
+    endif()
 
-    target_link_libraries(oshot_plugin PUBLIC oshot_common PRIVATE liboshotpm)
+    # Now manually propagate all interface dependencies of oshot_common
+    # so that anything linking oshot_plugin also gets them.
 
+    # oshot_common's object code linked once here, PRIVATE, to avoid
+    # relinking its .a a second time into oshot.exe (Windows multiple-
+    # definition issue). Its PUBLIC link libraries are relisted below as
+    # INTERFACE so they still propagate to anything linking oshot_plugin -
+    # forwarding via $<TARGET_PROPERTY:oshot_common,INTERFACE_LINK_LIBRARIES>
+    # doesn't work because PRIVATE deps like X11::X11 show up wrapped in
+    # $<LINK_ONLY:...>, which CMake can't re-parse as a target name.
+    target_link_libraries(
+        oshot_plugin
+        INTERFACE
+            fmt
+            toml++
+            tfd
+            imgui
+            tray
+            clip
+            nvdialog
+            tiny-process-library
+            PkgConfig::TESSERACT
+            PkgConfig::LEPTONICA
+            PkgConfig::ZBAR
+            OpenGL::GL
+            ${GLFW_TARGET}
+    )
+    target_include_directories(
+        oshot_plugin
+        INTERFACE $<TARGET_PROPERTY:oshot_common,INTERFACE_INCLUDE_DIRECTORIES>
+    )
+    target_compile_definitions(
+        oshot_plugin
+        INTERFACE $<TARGET_PROPERTY:oshot_common,INTERFACE_COMPILE_DEFINITIONS>
+    )
     set_target_properties(
         oshot_plugin
         PROPERTIES
@@ -328,7 +382,6 @@ if(NOT DISABLE_PLUGINS)
         oshotpm/src/state_manager.cpp
     )
     enable_lto(liboshotpm)
-    set_target_properties(liboshotpm PROPERTIES PREFIX "")
     target_compile_definitions(
         liboshotpm
         PUBLIC $<$<CONFIG:Debug>:DEBUG=1> VERSION="${PROJECT_VERSION}"
@@ -353,6 +406,7 @@ if(NOT DISABLE_PLUGINS)
     set_target_properties(
         liboshotpm
         PROPERTIES
+            PREFIX "" # libliboshotpm.so
             VERSION 1
             SOVERSION 1
             WINDOWS_EXPORT_ALL_SYMBOLS ON
@@ -699,7 +753,7 @@ if(DISABLE_PLUGINS)
     install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 else()
     install(
-        TARGETS ${PROJECT_NAME} imgui cimgui oshot_plugin
+        TARGETS ${PROJECT_NAME} imgui cimgui oshot_plugin liboshotpm oshotpm
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     )

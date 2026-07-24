@@ -106,7 +106,7 @@ static void load_plugin_path(const fs::path& path)
     }
 }
 
-void load_plugins(const std::vector<manifest_t>& repos)
+__attribute__((visibility("hidden"))) void load_plugins(const std::vector<manifest_t>& repos)
 {
     const fs::path pluginsDir = get_config_dir() / "plugins";
     fs::create_directories(pluginsDir);

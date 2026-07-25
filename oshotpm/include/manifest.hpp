@@ -56,16 +56,16 @@ struct plugin_t
     std::string description;
 
     // The plugin build directory,
-    // where we'll retrive the built plugin libraries.
+    // where we'll retrive the built plugin library.
     std::string output_dir;
 
     // The plugin SPDX Licenses Identifier (MIT, GPL-2.0, ...)
     // Not valided.
     std::vector<std::string> licenses;
 
-    // The state 'repositories.repo-name.plugins.libraries' field.
+    // The state 'repositories.repo-name.plugins.library' field.
     // NOTE: MUST be populated only by the state manager.
-    std::vector<std::string> libraries;
+    std::string library;
 
     // The plugin authors.
     std::vector<std::string> authors;

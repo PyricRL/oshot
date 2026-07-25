@@ -134,7 +134,7 @@ plugin_t Manifest::GetPlugin(const std::string_view name) const
              .description = m_toml.GetValueFromTable<std::string>(name, "description", UNKNOWN),
              .output_dir  = m_toml.GetValueFromTable<std::string>(name, "output-dir", UNKNOWN),
              .licenses    = m_toml.GetValueArrayStr(name, "licenses", {}),
-             .libraries   = {},  // MUST be populated only in StateManager
+             .library     = {},  // MUST be populated only in StateManager
              .authors     = m_toml.GetValueArrayStr(name, "authors", {}),
              .build_steps = m_toml.GetValueArrayStr(name, "build-steps", {}),
              .platforms   = m_toml.GetValueArrayStr(name, "platforms", {}) };

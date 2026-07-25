@@ -108,9 +108,9 @@ std::vector<manifest_t> StateManager::GetAllRepos() const
                 plugin.name        = plugin_api.GetValue<std::string>("name", UNKNOWN);
                 plugin.id          = plugin_api.GetValue<std::string>("id", UNKNOWN);
                 plugin.description = plugin_api.GetValue<std::string>("description", UNKNOWN);
+                plugin.library     = plugin_api.GetValue<std::string>("library", UNKNOWN);
                 plugin.authors     = plugin_api.GetValueArrayStr("authors", {});
                 plugin.licenses    = plugin_api.GetValueArrayStr("licenses", {});
-                plugin.libraries   = plugin_api.GetValueArrayStr("libraries", {});
 
                 manifest.plugins.push_back(std::move(plugin));
             }

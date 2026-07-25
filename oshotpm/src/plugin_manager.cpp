@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <random>
 
+#include "dylib.hpp"
 #include "fmt/format.h"
 #include "fmt/ranges.h"
 #include "tiny-process-library/process.hpp"
@@ -141,13 +142,11 @@ Result<PluginBuildResult> PluginBuilder::Build(const plugin_t&                  
 }
 
 // ----- PluginInstaller -----
-Result<toml::array> PluginInstaller::InstallLibraries(const plugin_t& plugin,
-                                                      const fs::path& manifest_config_path,
-                                                      bool            force,
-                                                      bool            is_update) const
+Result<fs::path> PluginInstaller::InstallLibrary(const plugin_t& plugin,
+                                                 const fs::path& manifest_config_path,
+                                                 bool            force,
+                                                 bool            is_update) const
 {
-    toml::array built_libraries;
-
     for (const auto& library : fs::directory_iterator{ plugin.output_dir })
     {
         const fs::path library_config_path = manifest_config_path / library.path().filename();
@@ -160,7 +159,9 @@ Result<toml::array> PluginInstaller::InstallLibraries(const plugin_t& plugin,
             fs::remove_all(library_config_path);
         }
 
-        if (library.is_regular_file() || library.is_symlink())
+        // Must be a file (library.so) and have the library extension of the OS
+        if (library.is_regular_file() && library.path().has_extension() &&
+            library.path().extension().string() == dylib::decorations::os_default().suffix)
         {
             std::error_code er;
             fs::rename(fs::canonical(library), library_config_path, er);
@@ -172,7 +173,7 @@ Result<toml::array> PluginInstaller::InstallLibraries(const plugin_t& plugin,
                                                  er.message()));
                 continue;
             }
-            built_libraries.push_back(library_config_path.string());
+            return Ok(library_config_path);
         }
         else
         {
@@ -180,14 +181,14 @@ Result<toml::array> PluginInstaller::InstallLibraries(const plugin_t& plugin,
         }
     }
 
-    return Ok(std::move(built_libraries));
+    return Err("Didn't find any library in output-dir");
 }
 
 // ----- PluginManager -----
 bool PluginManager::IsPluginConflicting(const plugin_t& pending_plugin) const
 {
-    for (const auto& manifest : m_state_manager.GetAllRepos())
-        for (const auto& plugin : manifest.plugins)
+    for (const manifest_t& manifest : m_state_manager.GetAllRepos())
+        for (const plugin_t& plugin : manifest.plugins)
             if (pending_plugin.id == plugin.id)
                 return true;
     return false;
@@ -369,11 +370,11 @@ Result<> PluginManager::InstallAllPlugins(const manifest_t&               repo,
             continue;
         }
 
-        Result<toml::array> libraries =
-            m_installer.InstallLibraries(plugin, manifest_config_path, options.install_force, is_update);
-        TRY(libraries);
+        Result<fs::path> library =
+            m_installer.InstallLibrary(plugin, manifest_config_path, options.install_force, is_update);
+        TRY(library);
 
-        TRY(m_state_manager.UpdatePlugin(repo.name, plugin.name, "libraries", std::move(libraries.get())));
+        TRY(m_state_manager.UpdatePlugin(repo.name, plugin.name, "library", library.get().string()));
         if (!m_state_manager.SaveState())
             return Err("Failed to write plugin state of repository '{}'", repo.name);
     }

@@ -313,8 +313,8 @@ licenses = ["MIT", "GPL-2.0"]
 platforms = ["all"]
 
 # The directory where the final plugin output (the built library) shall be found.
-# It is checked right after running build-steps below; oshotpm then picks up every
-# regular file/symlink inside it and installs it as one of this plugin's libraries.
+# It is checked right after running build-steps below; oshotpm then picks up the
+# one library found in this directory and installs it as one of this plugin's library.
 # The path is relative to the repository root unless absolute.
 output-dir = "build/plugin-dir/"
 

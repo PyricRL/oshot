@@ -93,7 +93,7 @@ enum class PluginBuildResult
 class PluginBuilder
 {
 public:
-    PluginBuilder(PluginCallbacks callbacks) : m_callbacks(std::move(callbacks)) {}
+    PluginBuilder(const PluginCallbacks& callbacks) : m_callbacks(callbacks) {}
 
     // `is_conflicting` is injected instead of this class calling into
     // StateManager itself, so it stays decoupled from state-file concerns.
@@ -102,25 +102,25 @@ public:
                                     const std::function<bool(const plugin_t&)>& is_conflicting) const;
 
 private:
-    PluginCallbacks m_callbacks;
+    const PluginCallbacks& m_callbacks;
 };
 
 // ----- installing a built plugin -----
 // Moves a plugin's built output files into the config directory. Does NOT
-// touch StateManager — returns the installed library paths and lets
+// touch StateManager, it returns the installed library paths and lets
 // PluginManager decide what to do with the state file.
 class PluginInstaller
 {
 public:
-    PluginInstaller(PluginCallbacks callbacks) : m_callbacks(std::move(callbacks)) {}
+    PluginInstaller(const PluginCallbacks& callbacks) : m_callbacks(callbacks) {}
 
-    Result<toml::array> InstallLibraries(const plugin_t& plugin,
-                                         const fs::path& manifest_config_path,
-                                         bool            force,
-                                         bool            is_update) const;
+    Result<fs::path> InstallLibrary(const plugin_t& plugin,
+                                    const fs::path& manifest_config_path,
+                                    bool            force,
+                                    bool            is_update) const;
 
 private:
-    PluginCallbacks m_callbacks;
+    const PluginCallbacks& m_callbacks;
 };
 
 // ----- orchestrator -----

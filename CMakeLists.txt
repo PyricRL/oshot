@@ -298,8 +298,6 @@ target_include_directories(
     PUBLIC include/ include/libs ${LEPTONICA_INCLUDE_DIRS}
 )
 
-target_compile_features(oshot_common PUBLIC cxx_std_20)
-
 # -----------------------------
 # oshot's plugin library
 # -----------------------------
@@ -319,6 +317,18 @@ if(NOT DISABLE_PLUGINS)
                 -Wl,--whole-archive
                 oshot_common
                 -Wl,--no-whole-archive
+                liboshotpm
+        )
+    elseif(APPLE)
+        # ld64 has no --whole-archive; -force_load is the per-archive
+        # equivalent. Needs the archive's actual file path, and oshot_common
+        # must still be listed as a normal link library too so CMake wires
+        # up the include dirs/compile defs/build-order dependency.
+        target_link_libraries(
+            oshot_plugin
+            PRIVATE
+                -Wl,-force_load,$<TARGET_FILE:oshot_common>
+                oshot_common
                 liboshotpm
         )
     else()
@@ -400,7 +410,6 @@ if(NOT DISABLE_PLUGINS)
         liboshotpm
         PUBLIC include/ include/libs/ oshotpm/include/
     )
-    target_compile_features(liboshotpm PUBLIC cxx_std_20)
     target_link_libraries(liboshotpm PUBLIC oshot_common)
 
     set_target_properties(
@@ -433,7 +442,6 @@ add_library(fmt STATIC src/libs/fmt/os.cc src/libs/fmt/format.cc)
 enable_lto(fmt)
 
 target_include_directories(fmt PUBLIC include/libs)
-target_compile_features(fmt PUBLIC cxx_std_20)
 target_compile_definitions(fmt PUBLIC FMT_HEADER_ONLY=0)
 
 # -----------------------------
@@ -444,7 +452,6 @@ add_library(toml++ STATIC src/libs/toml++/toml.cpp)
 enable_lto(toml++)
 
 target_include_directories(toml++ PUBLIC include/libs)
-target_compile_features(toml++ PUBLIC cxx_std_20)
 target_compile_definitions(toml++ PUBLIC TOML_HEADER_ONLY=0)
 
 # -----------------------------
@@ -579,7 +586,6 @@ else()
 endif()
 
 target_include_directories(tray PUBLIC include/libs)
-target_compile_features(tray PRIVATE cxx_std_20)
 
 # -----------------------------
 # clip library (integrated from its own CMakeLists.txt)
@@ -610,7 +616,6 @@ elseif(MINGW)
 endif()
 
 target_include_directories(clip PUBLIC include/libs/clip)
-target_compile_features(clip PRIVATE cxx_std_20)
 target_compile_definitions(clip PUBLIC CLIP_ENABLE_IMAGE=1)
 
 # -----------------------------
@@ -626,7 +631,6 @@ if(NOT DISABLE_PLUGINS)
     endif()
 
     target_include_directories(dylib PUBLIC include/libs/)
-    target_compile_features(dylib PRIVATE cxx_std_20)
 endif()
 
 # -----------------------------
@@ -714,7 +718,6 @@ if(MSVC)
     )
 else()
     target_compile_options(tiny-process-library PRIVATE -Wall -Wextra)
-    target_compile_features(tiny-process-library PRIVATE cxx_std_20)
 endif()
 
 if(WIN32)

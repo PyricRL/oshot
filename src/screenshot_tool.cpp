@@ -25,6 +25,7 @@
 #include "config.hpp"
 #include "fmt/chrono.h"
 #include "fmt/format.h"
+#include "fmt/ranges.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_opengl3_loader.h"
 #include "imgui/imgui_internal.h"
@@ -2326,64 +2327,179 @@ void ScreenshotTool::DrawManagePluginsWindow()
         return;
 
     bool open = m_show_window.Has(SubWindow::ManagePlugins);
-    ImGui::SetNextWindowSize(ImVec2(560, 400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(620, 480), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Manage plugins##manage_plugins_window", &open, ImGuiWindowFlags_NoSavedSettings))
     {
-        ImGui::TextDisabled("Note: Changes takes effect after restart of oshot");
+        ImGui::PushStyleColor(ImGuiCol_Text, rgba_t(0x999999FF).to_imvec4());
+        ImGui::TextWrapped("Changes take effect after restarting oshot.");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::Separator();
         ImGui::Spacing();
 
-        for (auto& [id, rt] : g_plugins)
+        // small helper: draws a compact rounded tag, returns width used
+        auto draw_tag = [](const char* label, const rgba_t col) {
+            ImVec2 text_size = ImGui::CalcTextSize(label);
+            ImVec2 pad(6.0f, 2.0f);
+            ImVec2 p0 = ImGui::GetCursorScreenPos();
+            ImVec2 size(text_size.x + pad.x * 2, text_size.y + pad.y * 2);
+
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            draw_list->AddRectFilled(p0, ImVec2(p0.x + size.x, p0.y + size.y), col.to_abgr(), 4.0f);
+            draw_list->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), 0xFFffffff, label);
+
+            ImGui::Dummy(size);
+        };
+
+        for (const manifest_t& repo : m_plugin_manager.GetStateManager().GetAllRepos())
         {
-            ScopedActivePlugin _(&rt);
+            ImGui::PushID(repo.name.c_str());
 
-            oshot_plugin_t* plugin = rt.plugin;
-            ImGui::TextUnformatted(plugin->name);
-            ImGui::TextDisabled("%s", plugin->id);
+            const ImGuiTreeNodeFlags header_flags =
+                ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_SpanAvailWidth;
 
-            if (rt.plugin_path.has_extension() && rt.plugin_path.extension() != ".disabled")
+            if (ImGui::CollapsingHeader(repo.name.c_str(), header_flags))
             {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));         // Red
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));  // Light Red
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.8f, 0.0f, 0.0f, 1.0f));   // Dark Red
-                if (ImGui::Button("Disable"))
+                ImGui::Indent();
+
+                ImGui::TextDisabled("Homepage:");
+                ImGui::SameLine(0, 4);
+                if (ImGui::TextLinkOpenURL(repo.url.c_str(), repo.url.c_str()))
+                    minimize_window();
+
+                ImGui::SameLine();
+                ImGui::TextDisabled("  |  commit %.7s", repo.git_hash.c_str());
+                ImGui::Spacing();
+
+                for (const plugin_t& plugin : repo.plugins)
                 {
-                    if (fs::exists(rt.plugin_path))
+                    std::error_code ec;
+                    ImGui::PushID(plugin.id.c_str());
+
+                    const fs::path enabled_path  = plugin.library;
+                    const fs::path disabled_path = fs::path(plugin.library).concat(".disabled");
+                    const bool     is_enabled    = fs::exists(enabled_path);
+                    const bool     is_disabled   = fs::exists(disabled_path);
+                    const bool     is_missing    = !is_enabled && !is_disabled;
+
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, rgba_t(0xffffff07).to_imvec4());
+                    ImGui::PushStyleColor(ImGuiCol_Border, rgba_t(0xffffff14).to_imvec4());
+
+                    ImGui::BeginChild("card",
+                                      ImVec2(0, 0),
+                                      ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY,
+                                      ImGuiWindowFlags_NoScrollbar);
+
+                    // Header row: name + id on the left, status badge on the right
+                    ImGui::TextUnformatted(plugin.name.c_str());
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(%s)", plugin.id.c_str());
+
+                    ImVec2 tag_size = ImGui::CalcTextSize(is_disabled ? "Disabled" : "Enabled");
+                    tag_size.x += 12.0f;
+                    ImGui::SameLine(ImGui::GetContentRegionAvail().x - tag_size.x + ImGui::GetCursorPosX());
+                    if (is_missing)
+                        draw_tag("Missing", rgba_t(0x8c2626FF));
+                    else if (is_enabled)
+                        draw_tag("Enabled", rgba_t(0x197233FF));
+                    else
+                        draw_tag("Disabled", rgba_t(0x725919FF));
+
+                    // Description
+                    if (!plugin.description.empty())
                     {
-                        fs::path disabled_path(rt.plugin_path);
-                        disabled_path += ".disabled";
-                        std::error_code ec;
-                        fs::rename(rt.plugin_path, disabled_path, ec);
-                        if (!ec)
-                            rt.plugin_path = std::move(disabled_path);
-                        else
-                            error("Failed to disable plugin '{}': {}", rt.id, ec.message());
+                        ImGui::Spacing();
+                        ImGui::TextWrapped("%s", plugin.description.c_str());
                     }
-                }
-                ImGui::PopStyleColor(3);
-            }
-            else
-            {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.10f, 0.65f, 0.25f, 1.0f));         // Green
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15f, 0.75f, 0.30f, 1.0f));  // Light Green
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.08f, 0.55f, 0.20f, 1.0f));   // Dark Green
-                if (ImGui::Button("Enable"))
-                {
-                    if (fs::exists(rt.plugin_path))
+
+                    ImGui::Spacing();
+
+                    // Authors
+                    if (!plugin.authors.empty())
                     {
-                        fs::path enabled_path(rt.plugin_path);
-                        enabled_path.replace_extension();
-                        std::error_code ec;
-                        fs::rename(rt.plugin_path, enabled_path, ec);
-                        if (!ec)
-                            rt.plugin_path = std::move(enabled_path);
-                        else
-                            error("Failed to enable plugin '{}': {}", rt.id, ec.message());
+                        std::string authors(fmt::format("{}", fmt::join(plugin.authors, ", ")));
+                        ImGui::TextDisabled("By %s", authors.c_str());
                     }
+
+                    // Licenses as tags
+                    if (!plugin.licenses.empty())
+                    {
+                        ImGui::TextDisabled("License:");
+                        for (const std::string& license : plugin.licenses)
+                        {
+                            ImGui::SameLine();
+                            draw_tag(license.c_str(), rgba_t(0x334c7fFF));
+                        }
+                    }
+
+                    // Platforms as tags
+                    if (!plugin.platforms.empty())
+                    {
+                        ImGui::TextDisabled("Platforms:");
+                        for (const std::string& plat : plugin.platforms)
+                        {
+                            ImGui::SameLine();
+                            draw_tag(plat.c_str(), rgba_t(0x3f3f3fFF));
+                        }
+                    }
+
+                    ImGui::Spacing();
+
+                    if (is_missing)
+                    {
+                        ImGui::TextColored(
+                            get_confidence_color(0), "Library not found at: %s", plugin.library.string().c_str());
+                    }
+                    else
+                    {
+                        // Right-align the action button
+                        const char* btn_label = is_enabled ? "Disable" : "Enable";
+                        float       btn_width = ImGui::CalcTextSize(btn_label).x + ImGui::GetStyle().FramePadding.x * 2;
+                        ImGui::SetCursorPosX(ImGui::GetContentRegionAvail().x - btn_width + ImGui::GetCursorPosX());
+
+                        if (is_enabled)
+                        {
+                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.12f, 0.12f, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.20f, 0.20f, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.45f, 0.08f, 0.08f, 1.0f));
+                        }
+                        else
+                        {
+                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.10f, 0.45f, 0.20f, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15f, 0.55f, 0.28f, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.08f, 0.38f, 0.16f, 1.0f));
+                        }
+
+                        if (ImGui::Button(btn_label))
+                        {
+                            ec.clear();
+                            if (is_enabled)
+                                fs::rename(enabled_path, disabled_path, ec);
+                            else
+                                fs::rename(disabled_path, enabled_path, ec);
+
+                            if (ec)
+                                error("Failed to {} plugin '{}': {}",
+                                      is_enabled ? "disable" : "enable",
+                                      plugin.id,
+                                      ec.message());
+                        }
+                        ImGui::PopStyleColor(3);
+                    }
+
+                    ImGui::EndChild();
+                    ImGui::PopStyleColor(2);
+                    ImGui::PopStyleVar();
+
+                    ImGui::Spacing();
+                    ImGui::PopID();
                 }
-                ImGui::PopStyleColor(3);
+
+                ImGui::Unindent();
             }
 
-            ImGui::Separator();
+            ImGui::PopID();
             ImGui::Spacing();
         }
         ImGui::End();

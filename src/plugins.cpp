@@ -36,31 +36,20 @@ static void load_plugin_path(const fs::path& path)
             return;
         }
 
-        if (!plugin->render || !plugin->id || !plugin->name || plugin->name[0] == '\0')
+        if (!plugin->render || !plugin->id || !plugin->name || plugin->name[0] == '\0' || plugin->id[0] == '\0')
         {
             spdlog::error("Plugin '{}' doesn't define name/ID or render function", path.stem().string());
             return;
         }
 
-        if (plugin->id[0] == '.' || !std::ranges::all_of(std::string_view(plugin->id), [](const unsigned char c) {
-                return (isalnum(c) || c == '-' || c == '_' || c == '=' || c == '.');
-            }))
+        if (plugin->id[0] == '.' || !Manifest::IsValidID(plugin->id))
         {
             spdlog::error("Plugin '{}' has an invalid ID", plugin->id);
             return;
         }
 
-        if (!std::ranges::all_of(std::string_view(plugin->name), [](const unsigned char c) {
-                return (isalnum(c) || c == '-' || c == '_' || c == '=' || c == ' ');
-            }))
-        {
-            spdlog::error(
-                "Plugin name '{}' in '{}' contains chars other than -_= or alpha numerical", plugin->name, plugin->id);
-            return;
-        }
-
-        const fs::path& plugin_config_dir  = path.parent_path();
-        fs::path        plugin_config_path = plugin_config_dir / "config.toml";
+        fs::path plugin_config_dir  = path.parent_path();
+        fs::path plugin_config_path = plugin_config_dir / "config.toml";
 
         fs::create_directories(plugin_config_dir);
 
@@ -86,8 +75,6 @@ static void load_plugin_path(const fs::path& path)
             return;
         }
 
-        // TODO: add a *real* plugin management and metadata and do not load anything
-        //       if plugin is set to disabled.
         if (is_enabled && plugin->init)
         {
             ScopedActivePlugin _(&it->second);
@@ -113,8 +100,7 @@ __attribute__((visibility("hidden"))) void load_plugins(const std::vector<manife
 
     for (const manifest_t& repo : repos)
         for (const plugin_t& plugin : repo.plugins)
-            for (const std::string& path : plugin.libraries)
-                load_plugin_path(path);
+            load_plugin_path(plugin.library);
 }
 
 #endif

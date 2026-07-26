@@ -56,6 +56,9 @@ public:
 private:
     const fs::path m_path{ get_config_dir() / "plugins" / "state.toml" };
     TomlAPI        m_toml;
+
+    mutable std::vector<manifest_t> m_manifests_cache;
+    mutable bool                    m_is_changed{ true };
 };
 
 template <typename T>
@@ -85,6 +88,7 @@ Result<> StateManager::UpdatePlugin(const std::string_view repo_name,
 
     if (!found)
         return Err("Couldn't find plugin '{}' in repository '{}' to update its state", plugin_name, repo_name);
+    m_is_changed = true;
     return Ok();
 }
 

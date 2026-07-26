@@ -65,12 +65,15 @@ Result<> StateManager::AddNewRepo(const Manifest& manifest)
                            { "id", plugin.id },
                            { "description", plugin.description },
                            { "authors", TomlAPI::VectorToArray(plugin.authors) },
-                           { "licenses", TomlAPI::VectorToArray(plugin.licenses) } };
+                           { "licenses", TomlAPI::VectorToArray(plugin.licenses) },
+                           { "platforms", TomlAPI::VectorToArray(plugin.platforms) } };
 
         plugins_arr.push_back(std::move(entry));
     }
 
     repo.insert_or_assign("plugins", std::move(plugins_arr));
+    m_is_changed = true;
+
     if (!SaveState())
         return Err("Failed to write plugin state of repository '{}'", manrepo.name);
     return Ok();
@@ -78,11 +81,15 @@ Result<> StateManager::AddNewRepo(const Manifest& manifest)
 
 std::vector<manifest_t> StateManager::GetAllRepos() const
 {
+    // Cache the state and update only if anything has changed
+    if (!m_is_changed)
+        return m_manifests_cache;
+    m_manifests_cache.clear();
+
     const toml::table* repositories = m_toml.GetTbl()["repositories"].as_table();
     if (!repositories)
-        return {};
+        return m_manifests_cache;  // it's already empty
 
-    std::vector<manifest_t> manifests;
     for (const auto& [repo_name, repo_node] : *repositories)
     {
         const toml::table* repo_tbl = repo_node.as_table();
@@ -111,15 +118,17 @@ std::vector<manifest_t> StateManager::GetAllRepos() const
                 plugin.library     = plugin_api.GetValue<std::string>("library", UNKNOWN);
                 plugin.authors     = plugin_api.GetValueArrayStr("authors", {});
                 plugin.licenses    = plugin_api.GetValueArrayStr("licenses", {});
+                plugin.platforms   = plugin_api.GetValueArrayStr("platforms", {});
 
                 manifest.plugins.push_back(std::move(plugin));
             }
         }
 
-        manifests.push_back(std::move(manifest));
+        m_manifests_cache.push_back(std::move(manifest));
     }
 
-    return manifests;
+    m_is_changed = false;
+    return m_manifests_cache;
 }
 
 Result<> StateManager::RemoveRepo(const std::string& repo)
@@ -129,6 +138,8 @@ Result<> StateManager::RemoveRepo(const std::string& repo)
         return Err("Couldn't find repository '{}'", repo);
 
     repo_tbl->erase(repo);
+    m_is_changed = true;
+
     if (!SaveState())
         return Err("Failed to write plugin state of repository '{}'", repo);
     return Ok();

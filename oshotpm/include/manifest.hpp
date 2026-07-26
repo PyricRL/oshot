@@ -65,7 +65,7 @@ struct plugin_t
 
     // The state 'repositories.repo-name.plugins.library' field.
     // NOTE: MUST be populated only by the state manager.
-    std::string library;
+    fs::path library;
 
     // The plugin authors.
     std::vector<std::string> authors;

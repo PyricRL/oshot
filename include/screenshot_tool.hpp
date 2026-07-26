@@ -386,8 +386,11 @@ private:
     void DrawAnnotationToolbar();
     void DrawPreferencesWindow();
     void DrawDownloadOCRWindow();
-    void DrawManagePluginsWindow();
     void DrawLogsWindow();
+
+#ifndef DISABLE_PLUGINS
+    void DrawManagePluginsWindow();
+#endif
 
     void UpdateHandleHoverState();
     void UpdateCursor();

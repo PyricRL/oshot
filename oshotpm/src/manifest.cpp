@@ -72,7 +72,7 @@ Result<> Manifest::ParseManifest()
     if (!fs::exists(m_path))
         return Err("Path '{}' doesn't exist", m_path.string());
 
-    m_toml.LoadFile(m_path.string());
+    TRY(m_toml.LoadFile(m_path.string()));
     static std::string str_stderr;
 
     m_repo.name = m_toml.GetValue<std::string>("repository.name", UNKNOWN);

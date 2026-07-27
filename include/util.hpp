@@ -36,7 +36,7 @@ enum class SavingOp;
 
 #define UNKNOWN "<u2n4kn6ow8n>"
 
-#define STBI_ERROR std::string(stbi_failure_reason() ? stbi_failure_reason() : "Unknown Error")
+#define STBI_ERROR (stbi_failure_reason() ? stbi_failure_reason() : "Unknown Error")
 
 // if Result is not ok(), return it's error
 #define TRY(expr)                     \

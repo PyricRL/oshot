@@ -67,7 +67,7 @@ public:
      * Load config file and parse every config variables
      * @param filename The config file path
      */
-    void LoadFile(const std::string& filename, bool do_die = false)
+    Result<> LoadFile(const std::string& filename)
     {
         try
         {
@@ -75,7 +75,7 @@ public:
         }
         catch (const toml::parse_error& err)
         {
-            const std::string& str = fmt::format(
+            return Err(
                 "Parsing toml file '{}' failed:\n"
                 "{}\n"
                 "\t(error occurred at line {} column {})",
@@ -83,8 +83,8 @@ public:
                 err.description(),
                 err.source().begin.line,
                 err.source().begin.column);
-            do_die ? die("{}", str) : error("{}", str);
         }
+        return Ok();
     }
 
     bool SaveFile(const std::string& tofile)

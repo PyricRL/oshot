@@ -37,7 +37,7 @@ Result<> Cache::LoadCacheFile()
     CdGuard guard(m_cache_dir_path);
 
     if (fs::exists(mk_file_path))
-        LoadFile(mk_file_path);
+        return LoadFile(mk_file_path);
 
     return Ok();
 }

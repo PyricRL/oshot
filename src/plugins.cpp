@@ -56,7 +56,8 @@ static void load_plugin_path(const fs::path& path)
         TomlAPI toml_api;
         if (!fs::exists(plugin_config_path))
             std::ofstream(plugin_config_path, std::ios::trunc | std::ios::ate).close();
-        toml_api.LoadFile(plugin_config_path.string());
+        MUST_OK(toml_api.LoadFile(plugin_config_path.string()),
+                { spdlog::error("Failed to load plugin '{}' config.toml: {}", plugin->id, _r.error_v()); });
 
         auto [it, inserted] = g_plugins.try_emplace(plugin->id,
                                                     plugin->id,

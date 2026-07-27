@@ -2480,10 +2480,7 @@ void ScreenshotTool::DrawManagePluginsWindow()
                                 fs::rename(disabled_path, enabled_path, ec);
 
                             if (ec)
-                                error("Failed to {} plugin '{}': {}",
-                                      btn_label,
-                                      plugin.id,
-                                      ec.message());
+                                error("Failed to {} plugin '{}': {}", btn_label, plugin.id, ec.message());
                         }
                         ImGui::PopStyleColor(3);
                     }

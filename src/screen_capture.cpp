@@ -267,7 +267,7 @@ Result<capture_result_t> capture_full_screen_spectacle()
     unlink(tmppath);
 
     if (!rgba)
-        return Err("Failed to decode PNG: " + STBI_ERROR);
+        return Err("Failed to decode PNG: {}", STBI_ERROR);
 
     result.w = w;
     result.h = h;
@@ -297,7 +297,7 @@ Result<capture_result_t> capture_full_screen_wayland()
     const int exit_code = proc.get_exit_status();
 
     if (exit_code != 0)
-        return Err("grim failed with exit code: " + fmt::to_string(exit_code));
+        return Err("grim failed with exit code: {}", exit_code);
 
     // stbi_load_from_memory takes an int length
     if (buf.size() > INT_MAX)
@@ -307,7 +307,7 @@ Result<capture_result_t> capture_full_screen_wayland()
     uint8_t* rgba = stbi_load_from_memory(buf.data(), int(buf.size()), &w, &h, &comp, STBI_rgb_alpha);
 
     if (!rgba)
-        return Err("Failed to read PPM data: " + STBI_ERROR);
+        return Err("Failed to read PPM data: {}", STBI_ERROR);
 
     result.w = w;
     result.h = h;
@@ -498,7 +498,7 @@ Result<capture_result_t> capture_full_screen_portal()
     if (!rgba)
     {
         unlink(st.png_path.c_str());
-        return Err("Failed to read PNG data: " + STBI_ERROR);
+        return Err("Failed to read PNG data: {}", STBI_ERROR);
     }
 
     st.cap.w = w;
@@ -621,8 +621,10 @@ Result<capture_result_t> capture_full_screen_macos()
     if (exit_code != 0)
     {
         unlink(tmppath);
-        return Err("screencapture failed (exit " + std::to_string(exit_code) +
-                   "). Please check Screen Recording permission in System Settings -> Privacy & Security");
+        return Err(
+            "screencapture failed (exit code {}). Please check Screen Recording permission in System Settings -> "
+            "Privacy & Security",
+            exit_code);
     }
 
     int      w = 0, h = 0, comp = 0;
@@ -630,7 +632,7 @@ Result<capture_result_t> capture_full_screen_macos()
     unlink(tmppath);  // clean up regardless
 
     if (!rgba)
-        return Err("Failed to decode screenshot PNG: " + STBI_ERROR);
+        return Err("Failed to decode screenshot PNG: {}", STBI_ERROR);
 
     result.w = w;
     result.h = h;

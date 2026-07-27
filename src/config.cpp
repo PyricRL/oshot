@@ -29,7 +29,7 @@ Config::Config(const fs::path& configFile, const fs::path& configDir)
 
 void Config::LoadConfigFile(const std::string& filename)
 {
-    LoadFile(filename, true);
+    MUST_OK(LoadFile(filename), die("{}", _r.error_v()));
 
     File.ocr_path         = GetValue<std::string>("default.ocr-path", File.ocr_path);
     File.ocr_get_repo     = GetValue<std::string>("default.ocr-repo-downlaod", "tesseract-ocr/tessdata");
@@ -68,7 +68,7 @@ void Config::LoadThemeFile(const std::string& filename)
 
     if (fs::exists(filename))
     {
-        m_theme.LoadFile(filename);
+        MUST_OK(m_theme.LoadFile(filename), die("{}", _r.error_v()));
         m_theme_path = filename;
     }
 

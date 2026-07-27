@@ -45,7 +45,7 @@ StateManager::StateManager()
         f.close();
     }
 
-    m_toml.LoadFile(m_path.string());
+    MUST_OK(m_toml.LoadFile(m_path.string()), die("{}", _r.error_v()));
 }
 
 Result<> StateManager::AddNewRepo(const Manifest& manifest)

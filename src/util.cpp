@@ -264,7 +264,7 @@ Result<capture_result_t> load_image_rgba(const std::string& path)
     }
 
     if (!pixels)
-        return Err("Failed to load image: " + STBI_ERROR);
+        return Err("Failed to load image: {}", STBI_ERROR);
 
     result.w = width;
     result.h = height;
@@ -287,7 +287,7 @@ Result<std::string> get_config_image_out_fmt()
     }
     catch (fmt::format_error& err)
     {
-        return Err("Bad image output format string: " + std::string(err.what()));
+        return Err("Bad image output format string: {}", std::string(err.what()));
     }
     return Ok(out_path);
 }

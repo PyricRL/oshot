@@ -479,11 +479,11 @@ void ScreenshotTool::RenderOverlay()
         DrawMenuItems();
         DrawPreferencesWindow();
         DrawDownloadOCRWindow();
-        DrawManagePluginsWindow();
         DrawLogsWindow();
         DrawOcrTools();
         DrawBarDecodeTools();
 #ifndef DISABLE_PLUGINS
+        DrawManagePluginsWindow();
         for (auto& [id, rt] : g_plugins)
         {
             if (!rt.enabled)
@@ -2320,9 +2320,9 @@ void ScreenshotTool::DrawPreferencesWindow()
     }
 }
 
+#ifndef DISABLE_PLUGINS
 void ScreenshotTool::DrawManagePluginsWindow()
 {
-#ifndef DISABLE_PLUGINS
     if (!m_show_window.Has(SubWindow::ManagePlugins))
         return;
 
@@ -2481,7 +2481,7 @@ void ScreenshotTool::DrawManagePluginsWindow()
 
                             if (ec)
                                 error("Failed to {} plugin '{}': {}",
-                                      is_enabled ? "disable" : "enable",
+                                      btn_label,
                                       plugin.id,
                                       ec.message());
                         }
@@ -2506,8 +2506,8 @@ void ScreenshotTool::DrawManagePluginsWindow()
     }
 
     m_show_window.Set(SubWindow::ManagePlugins, open);
-#endif
 }
+#endif
 
 void ScreenshotTool::DrawLogsWindow()
 {

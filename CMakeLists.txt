@@ -17,9 +17,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 #add_link_options($<$<CONFIG:Debug>:-fsanitize=address>)
 
 # GCC/Clang default Release flags already include -O3; this just makes it
-# explicit. Guarded because "-O3" is not a valid cl.exe switch and would
-# otherwise spam D9002 (or hard-fail under /WX) on MSVC builds.
-if(NOT MSVC)
+# explicit.
+if(NOT MSVC AND NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "-O")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 endif()
 
@@ -65,6 +64,15 @@ endmacro()
 # Options
 add_option(WINDOWS_CMD "Enable terminal support on Windows" OFF ON)
 add_option(DISABLE_PLUGINS "Disable plugins support" OFF ON)
+
+# When plugins are enabled, oshot_common becomes a SHARED library (see
+# below) instead of an OBJECT library, so anything that needs to find it at
+# runtime via rpath needs an extra rpath entry for it.
+if(NOT DISABLE_PLUGINS)
+    set(OSHOT_COMMON_RPATH_ENTRY ";$<TARGET_FILE_DIR:oshot_common>")
+else()
+    set(OSHOT_COMMON_RPATH_ENTRY "")
+endif()
 
 # -----------------------------
 # Dependencies
@@ -156,13 +164,16 @@ target_compile_definitions(
     PUBLIC VERSION="${PROJECT_VERSION}" TOML_HEADER_ONLY=0
 )
 
-# oshot_plugin PUBLIC-links oshot_common (see below), so linking oshot_plugin
-# alone pulls in oshot_common's usage requirements transitively. This is
-# deliberate: it ensures oshot and oshot_plugin.so resolve globals.cpp's
-# externs (g_ss_tool, g_config, g_cache, g_plugins, g_current_plugin, ...)
-# to the same symbols at the same address.
+# oshot's own sources (main.cpp, main_tool_opengl3.cpp) reference
+# globals.cpp's externs directly (g_sock, g_ss_tool, g_config, g_cache, ...),
+# which now live in the real oshot_common SHARED library rather than being
+# compiled directly into oshot_plugin.so. oshot_plugin only links
+# oshot_common PRIVATE, so that dependency isn't propagated to oshot's link
+# line automatically - oshot_common has to be linked here explicitly too, or
+# the linker can't find those symbols even though they'd resolve fine at
+# runtime via oshot_plugin.so's own DT_NEEDED entry.
 if(NOT DISABLE_PLUGINS)
-    target_link_libraries(${PROJECT_NAME} PRIVATE oshot_plugin)
+    target_link_libraries(${PROJECT_NAME} PRIVATE oshot_plugin oshot_common)
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE oshot_common)
 endif()
@@ -185,16 +196,34 @@ endif()
 set_target_properties(
     ${PROJECT_NAME}
     PROPERTIES
-        BUILD_RPATH "${_rpath_origin}/../lib;$<TARGET_FILE_DIR:imgui>"
+        BUILD_RPATH "${_rpath_origin}/../lib;$<TARGET_FILE_DIR:imgui>${OSHOT_COMMON_RPATH_ENTRY}"
         INSTALL_RPATH "${_rpath_origin}/../lib"
 )
 
 # -----------------------------
 # Common library for shared code
 # -----------------------------
+# With plugins enabled, oshot_common is linked into more than one shared
+# library that can end up loaded in the same process at once (oshot_plugin,
+# liboshotpm). An OBJECT library gets its object files copied into each
+# consumer that links it directly, so globals defined in globals.cpp
+# (g_ss_tool, g_config, g_cache, ...) would end up duplicated - one copy per
+# consumer - causing state divergence and double-destruction crashes.
+# Making it a SHARED library instead means there's exactly one copy of those
+# globals, and everything that links it (directly or transitively) resolves
+# to the same symbols.
+# When plugins are disabled there's only a single consumer (the oshot
+# executable itself), so the duplication problem doesn't exist and OBJECT
+# stays the simpler, lighter-weight choice.
+if(NOT DISABLE_PLUGINS)
+    set(OSHOT_COMMON_LIB_TYPE SHARED)
+else()
+    set(OSHOT_COMMON_LIB_TYPE OBJECT)
+endif()
+
 add_library(
     oshot_common
-    STATIC
+    ${OSHOT_COMMON_LIB_TYPE}
     src/cache.cpp
     src/clipboard.cpp
     src/config.cpp
@@ -207,6 +236,17 @@ add_library(
 
 if(OSHOT_OPTION_DEFINITIONS)
     target_compile_definitions(oshot_common PUBLIC ${OSHOT_OPTION_DEFINITIONS})
+endif()
+
+if(NOT DISABLE_PLUGINS)
+    set_target_properties(
+        oshot_common
+        PROPERTIES
+            VERSION 1
+            SOVERSION 1
+            WINDOWS_EXPORT_ALL_SYMBOLS ON
+            POSITION_INDEPENDENT_CODE ON
+    )
 endif()
 
 enable_lto(oshot_common)
@@ -309,44 +349,14 @@ if(NOT DISABLE_PLUGINS)
         src/plugins.cpp
     )
 
-    if((UNIX AND NOT APPLE) OR MINGW)
-        # Force all of oshot_common into the plugin
-        target_link_libraries(
-            oshot_plugin
-            PRIVATE
-                -Wl,--whole-archive
-                oshot_common
-                -Wl,--no-whole-archive
-                liboshotpm
-        )
-    elseif(APPLE)
-        # ld64 has no --whole-archive; -force_load is the per-archive
-        # equivalent. Needs the archive's actual file path, and oshot_common
-        # must still be listed as a normal link library too so CMake wires
-        # up the include dirs/compile defs/build-order dependency.
-        target_link_libraries(
-            oshot_plugin
-            PRIVATE
-                -Wl,-force_load,$<TARGET_FILE:oshot_common>
-                oshot_common
-                liboshotpm
-        )
-    else()
-        target_link_libraries(oshot_plugin PRIVATE oshot_common liboshotpm)
-    endif()
-
-    # Now manually propagate all interface dependencies of oshot_common
-    # so that anything linking oshot_plugin also gets them.
-
-    # oshot_common's object code linked once here, PRIVATE, to avoid
-    # relinking its .a a second time into oshot.exe (Windows multiple-
-    # definition issue). Its PUBLIC link libraries are relisted below as
-    # INTERFACE so they still propagate to anything linking oshot_plugin -
-    # forwarding via $<TARGET_PROPERTY:oshot_common,INTERFACE_LINK_LIBRARIES>
-    # doesn't work because PRIVATE deps like X11::X11 show up wrapped in
-    # $<LINK_ONLY:...>, which CMake can't re-parse as a target name.
+    # oshot_common's PUBLIC link libraries are relisted below as INTERFACE so
+    # they still propagate to anything linking oshot_plugin - forwarding via
+    # $<TARGET_PROPERTY:oshot_common,INTERFACE_LINK_LIBRARIES> doesn't work
+    # because PRIVATE deps like X11::X11 show up wrapped in $<LINK_ONLY:...>,
+    # which CMake can't re-parse as a target name.
     target_link_libraries(
         oshot_plugin
+        PRIVATE oshot_common liboshotpm
         INTERFACE
             fmt
             toml++
@@ -427,10 +437,10 @@ if(NOT DISABLE_PLUGINS)
     set_target_properties(
         oshotpm
         PROPERTIES
-            BUILD_RPATH "${_rpath_origin}/../lib;$<TARGET_FILE_DIR:imgui>"
+            BUILD_RPATH "${_rpath_origin}/../lib;$<TARGET_FILE_DIR:imgui>${OSHOT_COMMON_RPATH_ENTRY}"
             INSTALL_RPATH "${_rpath_origin}/../lib"
     )
-    target_link_libraries(oshotpm PRIVATE liboshotpm)
+    target_link_libraries(oshotpm PRIVATE liboshotpm oshot_plugin)
 endif()
 
 # -----------------------------
@@ -756,7 +766,14 @@ if(DISABLE_PLUGINS)
     install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 else()
     install(
-        TARGETS ${PROJECT_NAME} imgui cimgui oshot_plugin liboshotpm oshotpm
+        TARGETS
+            ${PROJECT_NAME}
+            imgui
+            cimgui
+            oshot_common
+            oshot_plugin
+            liboshotpm
+            oshotpm
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     )

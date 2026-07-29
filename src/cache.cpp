@@ -36,8 +36,5 @@ Result<> Cache::LoadCacheFile()
     // snapshot and switch to that directory.
     CdGuard guard(m_cache_dir_path);
 
-    if (fs::exists(mk_file_path))
-        return LoadFile(mk_file_path);
-
-    return Ok();
+    return LoadFile(mk_file_path);
 }

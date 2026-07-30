@@ -1164,6 +1164,50 @@ void ScreenshotTool::DrawSelectionBorder()
     draw_handle(ImVec2(sel_x + sel_w / 2, sel_y + sel_h), HandleHovered::Bottom);
     draw_handle(ImVec2(sel_x, sel_y + sel_h / 2), HandleHovered::Left);
     draw_handle(ImVec2(sel_x + sel_w, sel_y + sel_h / 2), HandleHovered::Right);
+
+    // Selection size window
+    // Show it when interacting with selections and if less
+    // than 2 seconds are passed
+    static double last_change_time = ImGui::GetTime();
+    if (m_input_owner == InputOwner::Selection)
+        last_change_time = ImGui::GetTime();
+
+    if ((ImGui::GetTime() - last_change_time) < 2.f)
+    {
+        const std::string& str      = fmt::format("{:.0f}x{:.0f}+{:.0f}+{:.0f}", sel_w, sel_h, sel_x, sel_y);
+        const ImVec2       str_size = ImGui::CalcTextSize(str.c_str());
+
+        constexpr float kPaddingX = 6.0f;
+        constexpr float kPaddingY = 4.5f;
+        constexpr float kMargin   = 3.0f;  // gap between selection corner and the label
+
+        const ImVec2 win_size(str_size.x + kPaddingX * 2.0f, str_size.y + kPaddingY * 2.0f);
+        const ImVec2 win_pos((sel_x + sel_w) - win_size.x - kMargin, (sel_y + sel_h) - win_size.y - kMargin);
+
+        ImGui::SetNextWindowPos(win_pos);
+        ImGui::SetNextWindowSize(win_size);
+        ImGui::SetNextWindowBgAlpha(0.85f);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(kPaddingX, kPaddingY));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 0.25f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+
+        if (ImGui::Begin("##selection_size_window",
+                         nullptr,
+                         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs |
+                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                             ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::TextUnformatted(str.c_str());
+            ImGui::End();
+        }
+
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar(3);
+    }
 }
 
 void ScreenshotTool::DrawMenuItems()

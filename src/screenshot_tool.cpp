@@ -121,13 +121,14 @@ static void draw_input_text_path(const char*                  label,
         {
             path = g_dropped_paths.back();
             g_dropped_paths.clear();
-            if_edited();
+            if (if_edited)
+                if_edited();
         }
     };
 
     const float button_size = ImGui::GetFrameHeight();
     ImGui::PushItemWidth(ImGui::CalcItemWidth() - button_size);
-    if (ImGui::InputText(input_id, &path, flags))
+    if (ImGui::InputText(input_id, &path, flags) && if_edited)
         if_edited();
     ImGui::PopItemWidth();
     handle_drop();
@@ -147,7 +148,8 @@ static void draw_input_text_path(const char*                  label,
         if (dialog_path)
         {
             path.assign(dialog_path);
-            if_edited();
+            if (if_edited)
+                if_edited();
         }
     }
     handle_drop();
@@ -484,6 +486,8 @@ void ScreenshotTool::RenderOverlay()
         DrawBarDecodeTools();
 #ifndef DISABLE_PLUGINS
         DrawManagePluginsWindow();
+        DrawInstallPluginsWindow();
+        DrawPluginInstallStatus();
         for (auto& [id, rt] : g_plugins)
         {
             if (!rt.enabled)
@@ -1291,6 +1295,8 @@ void ScreenshotTool::DrawMenuItems()
 #ifndef DISABLE_PLUGINS
             if (ImGui::MenuItem("Manage Plugins"))
                 m_show_window.Set(SubWindow::ManagePlugins);
+            if (ImGui::MenuItem("Install Plugins..."))
+                m_show_window.Set(SubWindow::InstallPlugins);
             ImGui::Separator();
 #endif
 
@@ -2367,13 +2373,22 @@ void ScreenshotTool::DrawPreferencesWindow()
 #ifndef DISABLE_PLUGINS
 void ScreenshotTool::DrawManagePluginsWindow()
 {
-    if (!m_show_window.Has(SubWindow::ManagePlugins))
+    bool open = m_show_window.Has(SubWindow::ManagePlugins);
+    if (!open)
         return;
 
-    bool open = m_show_window.Has(SubWindow::ManagePlugins);
     ImGui::SetNextWindowSize(ImVec2(620, 480), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Manage plugins##manage_plugins_window", &open, ImGuiWindowFlags_NoSavedSettings))
     {
+        if (m_install_state && m_install_state->running)
+        {
+            ImGui::TextColored(get_confidence_color(0),
+                               "An install is in progress, this list will refresh once it's done.");
+            ImGui::End();
+            m_show_window.Set(SubWindow::ManagePlugins, open);
+            return;
+        }
+
         ImGui::PushStyleColor(ImGuiCol_Text, rgba_t(0x999999FF).to_imvec4());
         ImGui::TextWrapped("Changes take effect after restarting oshot.");
         ImGui::PopStyleColor();
@@ -2548,6 +2563,234 @@ void ScreenshotTool::DrawManagePluginsWindow()
 
     m_show_window.Set(SubWindow::ManagePlugins, open);
 }
+
+void ScreenshotTool::StartInstall(const std::string& source)
+{
+    // The UI only ever shows an enabled "Install" button while no install is
+    // running (see DrawInstallPluginsWindow), so this is a defensive check,
+    // not the primary guard.
+    if (m_install_state && m_install_state->running)
+        return;
+
+    if (m_install_thread.joinable())
+        m_install_thread.join();
+
+    auto state = std::make_shared<plugin_install_state_t>();
+
+    // Every on_* callback just appends to the shared queue. Nothing here
+    // touches ImGui, so it's safe to invoke from the worker thread.
+    auto push = [state](plugin_install_event_t::Kind kind) {
+        return [state, kind](const std::string_view msg) {
+            std::lock_guard lock(state->events_mutex);
+            state->pending_events.push_back({ kind, std::string(msg) });
+        };
+    };
+
+    PluginCallbacks cb;
+    cb.on_status  = push(plugin_install_event_t::Kind::Status);
+    cb.on_success = push(plugin_install_event_t::Kind::Success);
+    cb.on_warning = push(plugin_install_event_t::Kind::Warning);
+    cb.on_error   = push(plugin_install_event_t::Kind::Error);
+    cb.on_info    = push(plugin_install_event_t::Kind::Info);
+
+    // Blocks the worker thread until DrawPluginInstallStatus() answers the
+    // popup on the render thread and notifies confirm_cv.
+    cb.confirm = [state](const std::string_view prompt, bool) -> bool {
+        std::unique_lock lock(state->confirm_mutex);
+        state->confirm_prompt   = std::string(prompt);
+        state->confirm_pending  = true;
+        state->confirm_answered = false;
+        state->confirm_cv.wait(lock, [&] { return state->confirm_answered; });
+        state->confirm_pending = false;
+        return state->confirm_answer;
+    };
+
+    // Must happen before the thread starts: GitClient/PluginBuilder/
+    // PluginInstaller hold references into PluginManager's m_callbacks, so
+    // this needs to settle before anything can call into them concurrently.
+    m_plugin_manager.SetCallbacks(cb);
+
+    m_install_events.clear();
+    m_install_state = state;
+
+    m_install_thread = std::thread([this, state, source]() {
+        Result<> r = m_plugin_manager.Install(source);
+        if (!r.ok())
+        {
+            std::lock_guard lock(state->events_mutex);
+            state->pending_events.push_back({ plugin_install_event_t::Kind::Error, r.error_v() });
+        }
+        state->running = false;
+    });
+}
+
+void ScreenshotTool::DrawInstallPluginsWindow()
+{
+    bool open = m_show_window.Has(SubWindow::InstallPlugins);
+    if (!open)
+        return;
+
+    const bool is_installing = m_install_state && m_install_state->running;
+
+    ImGui::SetNextWindowSize(ImVec2(560, 220), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Install plugins##install_plugins_window", &open, ImGuiWindowFlags_NoSavedSettings))
+    {
+        ImGui::TextColored(get_confidence_color(0), "NOTE: PLUGINS CAN HAVE MALWARE. INSTALL THEM AT YOUR OWN RISK");
+        ImGui::Spacing();
+        ImGui::TextWrapped(
+            "Accepts a git repository URL, a local folder with a manifest and source code, "
+            "or a prebuilt release archive (.zip/.tgz/.txz).");
+        ImGui::Spacing();
+
+        if (is_installing)
+            ImGui::BeginDisabled();
+
+        static const char* filters[] = { "*.zip", "*.tgz", "*.txz" };
+        draw_input_text_file("Source", "##install_source", filters, 3, nullptr, m_install_source);
+
+        const bool can_install = !is_installing && !m_install_source.empty();
+        if (!can_install)
+            ImGui::BeginDisabled();
+        if (ImGui::Button("Install"))
+        {
+            m_show_window.Set(SubWindow::PluginInstallStatus);
+            StartInstall(m_install_source);
+        }
+        if (!can_install)
+            ImGui::EndDisabled();
+
+        if (is_installing)
+        {
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::TextDisabled("Installing, see the status window for progress...");
+        }
+
+        ImGui::End();
+    }
+
+    m_show_window.Set(SubWindow::InstallPlugins, open);
+}
+
+void ScreenshotTool::DrawEventIcon(plugin_install_event_t::Kind kind)
+{
+    struct icon_t
+    {
+        const char* glyph;
+        rgba_t      color;
+    };
+    static constexpr icon_t table[] = {
+        { "o", rgba_t(0x808080FF) },  // Status (in progress)
+        { "v", rgba_t(0x2ecc71FF) },  // Success
+        { "!", rgba_t(0xf1c40fFF) },  // Warning
+        { "x", rgba_t(0xe74c3cFF) },  // Error
+        { "i", rgba_t(0x3498dbFF) },  // Info
+    };
+    const icon_t& icon = table[idx(kind)];
+    ImGui::TextColored(icon.color.to_imvec4(), "%s", icon.glyph);
+}
+
+void ScreenshotTool::DrawPluginInstallStatus()
+{
+    bool open = m_show_window.Has(SubWindow::PluginInstallStatus);
+    if (!open || !m_install_state)
+        return;
+
+    // Drain the worker thread's queue into the UI-owned tree. This is the
+    // only place m_install_events gets mutated.
+    {
+        std::lock_guard lock(m_install_state->events_mutex);
+        while (!m_install_state->pending_events.empty())
+        {
+            plugin_install_event_t ev = std::move(m_install_state->pending_events.front());
+            m_install_state->pending_events.pop_front();
+
+            if (!m_install_events.empty() && m_install_events.back().in_progress &&
+                ev.kind != plugin_install_event_t::Kind::Status)
+            {
+                install_node_t& node = m_install_events.back();
+                node.kind            = ev.kind;
+                node.in_progress     = false;
+                node.details.push_back(ev.text);
+            }
+            else
+            {
+                m_install_events.push_back({ ev.kind, ev.text, {}, ev.kind == plugin_install_event_t::Kind::Status });
+            }
+        }
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Plugin install##plugin_install_status_window", &open, ImGuiWindowFlags_NoSavedSettings))
+    {
+        for (size_t i = 0; i < m_install_events.size(); i++)
+        {
+            const install_node_t& node = m_install_events[i];
+            ImGui::PushID(static_cast<int>(i));
+
+            DrawEventIcon(node.kind);
+            ImGui::SameLine();
+            if (ImGui::TreeNodeEx("##node", ImGuiTreeNodeFlags_None, "%s", node.text.c_str()))
+            {
+                for (const std::string& detail : node.details)
+                    ImGui::TextWrapped("%s", detail.c_str());
+                ImGui::TreePop();
+            }
+
+            ImGui::PopID();
+        }
+
+        if (m_install_state->running)
+        {
+            ImGui::Spacing();
+            ImGui::TextDisabled("Working...");
+        }
+
+        // Pending confirmation from the worker thread, rendered as a modal
+        // inside this same window's frame.
+        bool has_confirm;
+        {
+            std::lock_guard lock(m_install_state->confirm_mutex);
+            has_confirm = m_install_state->confirm_pending && !m_install_state->confirm_answered;
+        }
+        if (has_confirm)
+            ImGui::OpenPopup("Confirm##plugin_install_confirm");
+
+        ImGui::SetNextWindowSize(ImVec2(550, 220));
+        if (ImGui::BeginPopupModal("Confirm##plugin_install_confirm", nullptr, ImGuiWindowFlags_NoCollapse))
+        {
+            std::lock_guard lock(m_install_state->confirm_mutex);
+            ImGui::TextWrapped("%s", m_install_state->confirm_prompt.c_str());
+            if (ImGui::Button("Yes"))
+            {
+                m_install_state->confirm_answer   = true;
+                m_install_state->confirm_answered = true;
+                m_install_state->confirm_cv.notify_all();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("No"))
+            {
+                m_install_state->confirm_answer   = false;
+                m_install_state->confirm_answered = true;
+                m_install_state->confirm_cv.notify_all();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+
+        ImGui::End();
+    }
+
+    // Don't let the person close the window out from under a running
+    // install: the worker thread would keep pushing events into a queue
+    // nothing is draining, and a pending confirm would hang forever with no
+    // popup left to answer it from.
+    if (!open && m_install_state->running)
+        open = true;
+
+    m_show_window.Set(SubWindow::PluginInstallStatus, open);
+}
 #endif
 
 void ScreenshotTool::DrawLogsWindow()
@@ -2557,7 +2800,8 @@ void ScreenshotTool::DrawLogsWindow()
         if (auto logger = spdlog::default_logger())
             imgui_ring = std::dynamic_pointer_cast<spdlog::sinks::ringbuffer_sink_mt>(logger->sinks()[2]);
 
-    if (!m_show_window.Has(SubWindow::Logs) || !imgui_ring)
+    bool open = m_show_window.Has(SubWindow::Logs);
+    if (!open || !imgui_ring)
         return;
 
     auto level_color = [](spdlog::level::level_enum lvl) -> rgba_t {
@@ -2593,7 +2837,6 @@ void ScreenshotTool::DrawLogsWindow()
     static bool                          autoscroll = true;
     static spdlog::log_clock::time_point cleared_before{};  // "soft clear" marker
 
-    bool open = m_show_window.Has(SubWindow::Logs);
     ImGui::SetNextWindowSize(ImVec2(560, 400), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Logs##logs_window", &open, ImGuiWindowFlags_NoSavedSettings))
     {
@@ -2689,7 +2932,8 @@ void ScreenshotTool::DrawDownloadOCRWindow()
 {
     ErrorContext<OcrDownloadError>& ectx = m_download_errors;
 
-    if (!m_show_window.Has(SubWindow::OcrDownload))
+    bool open = m_show_window.Has(SubWindow::OcrDownload);
+    if (!open)
         return;
 
     static bool        has_downloaded = false;
@@ -2705,7 +2949,6 @@ void ScreenshotTool::DrawDownloadOCRWindow()
 
     const bool is_downloading = m_ocr_download && m_ocr_download->running.load();
 
-    bool open = m_show_window.Has(SubWindow::OcrDownload);
     ImGui::SetNextWindowSize(ImVec2(520, 0), ImGuiCond_FirstUseEver);  // 0 = auto height
     if (ImGui::Begin("Download OCR Model##ocr_download_window", &open, ImGuiWindowFlags_NoSavedSettings))
     {

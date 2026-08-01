@@ -366,7 +366,8 @@ void list_all_plugins(const StateManager& state)
         for (const manifest_t& manifest : state.GetAllRepos())
         {
             fmt::println("\033[1;32mRepository:\033[0m {}", manifest.name);
-            fmt::println("\033[1;33mURL:\033[0m {}", manifest.url);
+            fmt::println("\033[1;33mURL:\033[0m {}", manifest.url.empty() ? "(none)" : manifest.url);
+            fmt::println("\033[1;33mSource:\033[0m {}", manifest.source == RepoSource::LocalPlugin ? "local" : "git");
             fmt::println("\033[1;34mPlugins:");
             for (const plugin_t& plugin : manifest.plugins)
             {
@@ -384,7 +385,10 @@ void list_all_plugins(const StateManager& state)
     {
         for (const manifest_t& manifest : state.GetAllRepos())
         {
-            fmt::println("\033[1;32mRepository:\033[0m {} (\033[1;33m{}\033[0m)", manifest.name, manifest.url);
+            const char* source_tag =
+                manifest.source == RepoSource::LocalPlugin ? " \033[1;38;5;244m[local]\033[0m" : "";
+            fmt::println(
+                "\033[1;32mRepository:\033[0m {} (\033[1;33m{}\033[0m){}", manifest.name, manifest.url, source_tag);
             fmt::println("\033[1;34mPlugins:");
             for (const plugin_t& plugin : manifest.plugins)
             {
@@ -432,21 +436,16 @@ int main(int argc, char* argv[])
         return ask_user_yn(default_answer, "{}", prompt);
     };
 
-    StateManager state;
+    StateManager  state;
+    PluginManager plugin_manager(std::move(state), cb, true);
     switch (op)
     {
         case INSTALL:
         {
             if (options.arguments.size() < 1)
-                die("Please provide a plugin repository to install");
-            PluginManager plugin_manager(std::move(state), cb);
+                die("Please provide a plugin repository, local path, or archive to install");
             for (const std::string& arg : options.arguments)
-            {
-                if (fs::exists(arg))
-                    MUST_OK(plugin_manager.BuildPlugins(arg), error("Failed to build repository: {}", _r.error_v()));
-                else
-                    MUST_OK(plugin_manager.AddPluginRepo(arg), error("Failed to add repository: {}", _r.error_v()));
-            }
+                MUST_OK(plugin_manager.Install(arg), error("Failed to install '{}': {}", arg, _r.error_v()));
             break;
         }
         case LIST:
@@ -475,7 +474,6 @@ int main(int argc, char* argv[])
         }
         case UPDATE:
         {
-            PluginManager plugin_manager(std::move(state), cb);
             MUST_OK(plugin_manager.UpdateRepos(), error("Failed to update repositories: {}", _r.error_v()));
             break;
         }
@@ -484,7 +482,6 @@ int main(int argc, char* argv[])
             if (options.arguments.size() < 1)
                 die("Please provide a plugin repository to uninstall");
 
-            PluginManager plugin_manager(std::move(state), cb);
             for (const std::string& arg : options.arguments)
                 MUST_OK(plugin_manager.RemoveRepo(arg), error("Failed to remove repository: {}", _r.error_v()));
             break;

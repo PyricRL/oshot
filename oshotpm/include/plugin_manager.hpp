@@ -34,7 +34,6 @@
 
 #include "manifest.hpp"
 #include "state_manager.hpp"
-#include "toml++/toml.hpp"
 #include "util.hpp"
 
 // options
@@ -70,7 +69,7 @@ struct PluginCallbacks
 class GitClient
 {
 public:
-    GitClient(PluginCallbacks callbacks) : m_callbacks(std::move(callbacks)) {}
+    GitClient(const PluginCallbacks& callbacks) : m_callbacks(callbacks) {}
 
     Result<> Clone(const std::string& url, const fs::path& dest_dir) const;
     Result<> PullRebase(const fs::path& repo_dir) const;
@@ -78,7 +77,7 @@ public:
     Result<> LsRemoteHead(const std::string& url, std::string& out_hash) const;
 
 private:
-    PluginCallbacks m_callbacks;
+    const PluginCallbacks& m_callbacks;
 };
 
 // building a single plugin
@@ -105,6 +104,23 @@ private:
     const PluginCallbacks& m_callbacks;
 };
 
+enum class ArchiveType
+{
+    None,
+    Targz,
+    Tarxz,
+    Zip,
+    SevenZip  // C++ doesn't let me use 7z
+};
+
+namespace Archiver
+{
+bool        IsArchive(const fs::path& archive);
+ArchiveType GetArchiveType(const fs::path& archive);
+Result<>    Extract(const fs::path& archive, const fs::path& dest_dir);
+
+};  // namespace Archiver
+
 // ----- installing a built plugin -----
 // Moves a plugin's built output files into the config directory. Does NOT
 // touch StateManager, it returns the installed library paths and lets
@@ -115,6 +131,7 @@ public:
     PluginInstaller(const PluginCallbacks& callbacks) : m_callbacks(callbacks) {}
 
     Result<fs::path> InstallLibrary(const plugin_t& plugin,
+                                    const fs::path& library_dir,
                                     const fs::path& manifest_config_path,
                                     bool            force,
                                     bool            is_update) const;
@@ -124,32 +141,77 @@ private:
 };
 
 // ----- orchestrator -----
+
+// Describes where a working directory passed to BuildPlugins() came from,
+// which drives two independent things at once: whether oshotpm is allowed
+// to delete/move it, and what RepoSource the resulting manifest_t gets
+// tagged with.
+enum class WorkingDirOrigin
+{
+    // A temp dir oshotpm created itself via `git clone`. Owned: cleaned up
+    // on failure, renamed into the long-term cache on success. Tagged
+    // RepoSource::GitRepository.
+    GitClone,
+
+    // A folder the caller (person, CLI arg) pointed us at directly. NOT
+    // owned: never deleted or renamed, regardless of success or failure.
+    // Tagged RepoSource::LocalPlugin.
+    UserFolder,
+};
+
 class PluginManager
 {
 public:
-    PluginManager(StateManager&& state_manager, PluginCallbacks& callbacks)
-        : m_state_manager(std::move(state_manager)),
+    PluginManager(StateManager&& state_manager, PluginCallbacks& callbacks, bool is_cli)
+        : m_is_cli(is_cli),
+          m_state_manager(std::move(state_manager)),
           m_callbacks(callbacks),
           m_git(m_callbacks),
           m_builder(m_callbacks),
           m_installer(m_callbacks)
     {}
 
+    Result<> ConfirmTrustDisclaimer() const;
     Result<> AddPluginRepo(const std::string& repo, bool is_update = false);
     Result<> UpdateRepos();
     Result<> RemoveRepo(const std::string& repo_name);
-    Result<> BuildPlugins(const fs::path& working_dir, bool is_update = false);
+    Result<> BuildPlugins(const fs::path& working_dir, bool is_update, WorkingDirOrigin origin);
+    Result<> InstallPrebuilt(const fs::path& archive, bool is_update = false);
+
+    // Single entry point for the UI: figures out whether `source` is a git
+    // URL, a local source folder, or a prebuilt release archive, and routes
+    // to the matching install path.
+    Result<> Install(const std::string& source, bool is_update = false);
+
+    // Replaces the callback set used for all following operations. Safe to
+    // call between operations; must not be called while a call into this
+    // object is in flight on another thread, since GitClient/PluginBuilder/
+    // PluginInstaller hold references into m_callbacks rather than copies.
+    void SetCallbacks(PluginCallbacks callbacks) { m_callbacks = std::move(callbacks); }
 
     StateManager& GetStateManager() { return m_state_manager; }
     bool          IsPluginConflicting(const plugin_t& plugin) const;
 
 private:
-    Result<> ConfirmTrustDisclaimer() const;
     Result<> ConfirmDependencies(const manifest_t& repo) const;
     Result<> BuildAllPlugins(const manifest_t& repo, bool is_update, std::vector<std::string>& out_skipped);
     Result<> FinalizeRepoDirectory(const fs::path& working_dir, const fs::path& repo_cache_path) const;
-    Result<> InstallAllPlugins(const manifest_t& repo, const std::vector<std::string>& skipped, bool is_update);
+    Result<> InstallAllPlugins(const manifest_t&               repo,
+                               const std::vector<std::string>& skipped,
+                               bool                            is_update,
+                               bool                            built_from_source);
 
+    // Shared tail of BuildPlugins/InstallPrebuilt: copies built/prebuilt
+    // libraries into the config dir and reports the final success message.
+    // Everything before this point (parsing the manifest, trust/dependency
+    // confirmation, and either building or platform-filtering the plugin
+    // list) differs between the two callers.
+    Result<> FinalizeInstall(const manifest_t&               repo,
+                             const std::vector<std::string>& skipped,
+                             bool                            is_update,
+                             bool                            built_from_source);
+
+    bool            m_is_cli;
     StateManager    m_state_manager;
     PluginCallbacks m_callbacks;
     GitClient       m_git;

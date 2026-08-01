@@ -4,12 +4,15 @@
 #include <algorithm>
 #include <atomic>
 #include <bitset>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <deque>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 
@@ -93,6 +96,8 @@ enum class SubWindow : size_t
     About,
     Preferences,
     MainTextTools,
+    InstallPlugins,
+    PluginInstallStatus,
     ManagePlugins,
     Logs,
     COUNT
@@ -101,9 +106,9 @@ enum class SubWindow : size_t
 // Used for config.hpp
 enum class ColorPickerAlpha
 {
-    Disabled = 0,  // alpha channel is not editable
-    Inline   = 1,  // alpha editable via the picker's inline slider
-    Bar      = 2,  // alpha editable via a dedicated alpha bar, too
+    Disabled,  // alpha channel is not editable
+    Inline,    // alpha editable via the picker's inline slider
+    Bar,       // alpha editable via a dedicated alpha bar, too
 };
 
 enum class CurrentAction
@@ -189,6 +194,55 @@ struct inputs_results_t
     std::string resolved_ann_font_path;
 };
 
+#ifndef DISABLE_PLUGINS
+// One entry pushed by a PluginCallbacks::on_* call. Produced on the install
+// worker thread, only ever read/cleared on the render thread.
+struct plugin_install_event_t
+{
+    enum class Kind
+    {
+        Status,
+        Success,
+        Warning,
+        Error,
+        Info
+    };
+
+    Kind        kind;
+    std::string text;
+};
+
+// A node in the status window's tree. `in_progress` nodes are the ones a
+// following non-Status event resolves in place instead of appending a new
+// node for.
+struct install_node_t
+{
+    plugin_install_event_t::Kind kind;
+    std::string                  text;
+    std::vector<std::string>     details;
+    bool                         in_progress;
+};
+
+// Shared between the render thread and the install worker thread for the
+// duration of a single install operation. Owned via shared_ptr so the
+// worker thread can safely finish writing to it even if the UI tears down
+// its own reference first (e.g. the person closes the app mid-install).
+struct plugin_install_state_t
+{
+    std::atomic<bool> running{ true };
+
+    std::mutex                         events_mutex;
+    std::deque<plugin_install_event_t> pending_events;
+
+    std::mutex              confirm_mutex;
+    std::condition_variable confirm_cv;
+    std::string             confirm_prompt;
+    bool                    confirm_pending  = false;
+    bool                    confirm_answered = false;
+    bool                    confirm_answer   = false;
+};
+#endif
+
 template <typename Enum>
 struct GeneralContext
 {
@@ -231,7 +285,12 @@ class ScreenshotTool
 {
 public:
 #ifndef DISABLE_PLUGINS
-    ScreenshotTool(StateManager&& state) : m_plugin_manager(std::move(state), m_plugin_cb) {}
+    ScreenshotTool(StateManager&& state) : m_plugin_manager(std::move(state), m_plugin_cb, /*is_cli=*/false) {}
+    ~ScreenshotTool()
+    {
+        if (m_install_thread.joinable())
+            m_install_thread.join();
+    }
 #endif
 
     Result<>             Start();
@@ -361,8 +420,17 @@ private:
     std::array<float, idx(ToolType::Count)>        m_tool_thickness;
 
 #ifndef DISABLE_PLUGINS
-    PluginManager   m_plugin_manager;
+    // m_plugin_cb must be declared (and therefore constructed) before
+    // m_plugin_manager: the constructor initializes m_plugin_manager with a
+    // copy of m_plugin_cb, so the reverse order would copy a not-yet-
+    // constructed PluginCallbacks.
     PluginCallbacks m_plugin_cb;
+    PluginManager   m_plugin_manager;
+
+    std::string                             m_install_source;  // text field backing the install window
+    std::thread                             m_install_thread;
+    std::shared_ptr<plugin_install_state_t> m_install_state;
+    std::vector<install_node_t>             m_install_events;
 #endif
 
     void CreateCopyTextButton(const std::string& text);
@@ -390,6 +458,15 @@ private:
 
 #ifndef DISABLE_PLUGINS
     void DrawManagePluginsWindow();
+    void DrawInstallPluginsWindow();
+    void DrawPluginInstallStatus();
+    void DrawEventIcon(plugin_install_event_t::Kind kind);
+
+    // Kicks off `source` (git URL / local folder / archive path) on a
+    // background thread. Wires fresh PluginCallbacks around a new
+    // plugin_install_state_t so the render thread can drain progress from
+    // it without touching ImGui from off the render thread.
+    void StartInstall(const std::string& source);
 #endif
 
     void UpdateHandleHoverState();

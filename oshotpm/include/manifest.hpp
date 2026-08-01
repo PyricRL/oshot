@@ -42,6 +42,18 @@
 #  define PLATFORM "windows"
 #endif
 
+// Where a repo entry came from. Git-sourced repos live under a cache dir
+// oshotpm owns and can `git pull`/`git ls-remote` to check for updates.
+// Local ones (a folder someone pointed us at, or a prebuilt archive) have
+// no upstream to track: oshotpm never renames/deletes the source, and
+// UpdateRepos() skips them outright instead of guessing from git_hash being
+// empty.
+enum class RepoSource
+{
+    GitRepository,
+    LocalPlugin
+};
+
 struct plugin_t
 {
     // The plugin name.
@@ -89,8 +101,16 @@ struct manifest_t
     std::string url;
 
     // NOTE: INTERNAL ONLY
-    // The repository latest commit hash.
+    // The repository latest commit hash. Empty for a LocalPlugin source,
+    // and may also be empty for a GitRepository source if the git lookup
+    // wasn't possible (see Manifest::ParseManifest).
     std::string git_hash;
+
+    // NOTE: INTERNAL ONLY. Stamped by PluginManager (not by Manifest
+    // itself) once it knows how this manifest was obtained: Manifest has
+    // no way to tell "cloned by us" apart from "just a folder that happens
+    // to have a .git in it".
+    RepoSource source = RepoSource::GitRepository;
 
     // An array of all the plugins that are declared in the manifest
     std::vector<plugin_t> plugins;

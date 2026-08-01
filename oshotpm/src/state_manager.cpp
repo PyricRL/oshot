@@ -48,14 +48,13 @@ StateManager::StateManager()
     MUST_OK(m_toml.LoadFile(m_path.string()), die("{}", _r.error_v()));
 }
 
-Result<> StateManager::AddNewRepo(const Manifest& manifest)
+Result<> StateManager::AddNewRepo(const manifest_t& manrepo)
 {
-    const manifest_t& manrepo = manifest.GetRepo();
-
     toml::table& repositories = TomlAPI::EnsureTable(m_toml.GetTbl(), "repositories");
     toml::table& repo         = TomlAPI::EnsureTable(repositories, manrepo.name);
     repo.insert_or_assign("url", manrepo.url);
     repo.insert_or_assign("git-hash", manrepo.git_hash);
+    repo.insert_or_assign("source", manrepo.source == RepoSource::LocalPlugin ? "local" : "git");
 
     toml::array plugins_arr;
     for (const plugin_t& plugin : manrepo.plugins)
@@ -101,6 +100,8 @@ std::vector<manifest_t> StateManager::GetAllRepos() const
         manifest.name     = repo_name.str();
         manifest.url      = repo_api.GetValue<std::string>("url", UNKNOWN);
         manifest.git_hash = repo_api.GetValue<std::string>("git-hash", UNKNOWN);
+        manifest.source   = repo_api.GetValue<std::string>("source", "git") == "git" ? RepoSource::GitRepository
+                                                                                     : RepoSource::LocalPlugin;
 
         if (const toml::array* plugins = repo_tbl->get_as<toml::array>("plugins"))
         {

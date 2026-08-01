@@ -39,7 +39,7 @@ public:
     StateManager& operator=(const StateManager&) = delete;
     ~StateManager()                              = default;
 
-    Result<>                AddNewRepo(const Manifest& manifest);
+    Result<>                AddNewRepo(const manifest_t& repo);
     Result<>                RemoveRepo(const std::string& repo);
     std::vector<manifest_t> GetAllRepos() const;
 

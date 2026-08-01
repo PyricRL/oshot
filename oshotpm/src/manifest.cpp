@@ -84,14 +84,23 @@ Result<> Manifest::ParseManifest()
             "Manifest repository name '{}' is invalid. Only alphanumeric and '-', '_', '=' are allowed in the name",
             m_repo.name);
 
-    TinyProcessLib::Process proc(
-        fmt::format("git -C {} rev-parse HEAD", m_path.parent_path().string()),
-        "",
-        [&](const char* buf, size_t len) { m_repo.git_hash.assign(buf, len); },
-        [&](const char* buf, size_t len) { str_stderr.append(buf, len); });
-    if (proc.get_exit_status() != 0)
-        return Err("Failed to get manifest git repository hash: {}", str_stderr);
-    m_repo.git_hash.erase(std::remove(m_repo.git_hash.begin(), m_repo.git_hash.end(), '\n'), m_repo.git_hash.end());
+    // Only a git checkout (a repo cloned by AddPluginRepo, or a person's own
+    // git-tracked source folder) has a hash to read. A prebuilt release
+    // archive extraction, or a local folder that's just source code without
+    // git, legitimately has none: leave git_hash empty rather than failing
+    // the whole parse over it. Downstream, an empty git_hash is what tells
+    // UpdateRepos() there's nothing to `git pull`/`git ls-remote` here.
+    if (fs::exists(m_path.parent_path() / ".git"))
+    {
+        TinyProcessLib::Process proc(
+            fmt::format("git -C {} rev-parse HEAD", m_path.parent_path().string()),
+            "",
+            [&](const char* buf, size_t len) { m_repo.git_hash.assign(buf, len); },
+            [&](const char* buf, size_t len) { str_stderr.append(buf, len); });
+        if (proc.get_exit_status() != 0)
+            return Err("Failed to get manifest git repository hash: {}", str_stderr);
+        m_repo.git_hash.erase(std::remove(m_repo.git_hash.begin(), m_repo.git_hash.end(), '\n'), m_repo.git_hash.end());
+    }
 
     const auto& deps_all  = m_toml.GetValueArrayStr("dependencies.all", {});
     const auto& deps_plat = m_toml.GetValueArrayStr("dependencies." PLATFORM, {});

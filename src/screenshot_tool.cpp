@@ -412,6 +412,16 @@ Result<> ScreenshotTool::StartWindow()
     logo_texture = CreateTexture(nullptr, OSHOT_LOGO_RGBA, OSHOT_LOGO_W, OSHOT_LOGO_H).get();
 #endif
 
+    // Placeholders for not crashing when used but not needed
+    PluginCallbacks cb;
+    cb.on_status  = [](const std::string_view) {};
+    cb.on_success = [](const std::string_view) {};
+    cb.on_warning = [](const std::string_view) {};
+    cb.on_error   = [](const std::string_view) {};
+    cb.on_info    = [](const std::string_view) {};
+    cb.confirm    = [](const std::string_view, bool) -> bool { return false; };
+    m_plugin_manager.SetCallbacks(cb);
+
     if (!fs::exists(m_inputs.ocr_model_downloaded_path))
         SetError(m_download_errors, OcrDownloadError::InvalidPath, "No such directory or path");
     else if (!fs::is_directory(m_inputs.ocr_model_downloaded_path))
@@ -488,6 +498,7 @@ void ScreenshotTool::RenderOverlay()
         DrawManagePluginsWindow();
         DrawInstallPluginsWindow();
         DrawPluginInstallStatus();
+        DrawUninstallPluginsWindow();
         for (auto& [id, rt] : g_plugins)
         {
             if (!rt.enabled)
@@ -1297,6 +1308,8 @@ void ScreenshotTool::DrawMenuItems()
                 m_show_window.Set(SubWindow::ManagePlugins);
             if (ImGui::MenuItem("Install Plugins..."))
                 m_show_window.Set(SubWindow::InstallPlugins);
+            if (ImGui::MenuItem("Uninstall Plugins"))
+                m_show_window.Set(SubWindow::UninstallPlugins);
             ImGui::Separator();
 #endif
 
@@ -2414,10 +2427,9 @@ void ScreenshotTool::DrawManagePluginsWindow()
         {
             ImGui::PushID(repo.name.c_str());
 
-            const ImGuiTreeNodeFlags header_flags =
-                ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_SpanAvailWidth;
-
-            if (ImGui::CollapsingHeader(repo.name.c_str(), header_flags))
+            if (ImGui::CollapsingHeader(
+                    repo.name.c_str(),
+                    ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_SpanAvailWidth))
             {
                 ImGui::Indent();
 
@@ -2564,6 +2576,157 @@ void ScreenshotTool::DrawManagePluginsWindow()
     m_show_window.Set(SubWindow::ManagePlugins, open);
 }
 
+void ScreenshotTool::DrawUninstallPluginsWindow()
+{
+    bool open = m_show_window.Has(SubWindow::UninstallPlugins);
+    if (!open)
+        return;
+
+    ImGui::SetNextWindowSize(ImVec2(620, 480), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Uninstall plugins##uninstall_plugins_window", &open, ImGuiWindowFlags_NoSavedSettings))
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, rgba_t(0x999999FF).to_imvec4());
+        ImGui::TextWrapped("Changes take effect after restarting oshot.");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        const auto& repos = m_plugin_manager.GetStateManager().GetAllRepos();
+
+        if (repos.empty())
+            ImGui::TextDisabled("No plugin repositories installed.");
+
+        auto draw_tag = [](const char* label, const rgba_t col) {
+            const ImVec2 text_size = ImGui::CalcTextSize(label);
+            const ImVec2 pad(6.0f, 2.0f);
+            const ImVec2 size(text_size.x + pad.x * 2, text_size.y + pad.y * 2);
+            const ImVec2 p0 = ImGui::GetCursorScreenPos();
+
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            draw_list->AddRectFilled(p0, ImVec2(p0.x + size.x, p0.y + size.y), col.to_abgr(), 4.0f);
+            draw_list->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), IM_COL32_WHITE, label);
+
+            ImGui::Dummy(size);
+        };
+
+        // Deferred out of the loop: RemoveRepo() must never run while `repos`
+        // is still being iterated, and OpenPopup must fire from the same
+        // ID-stack context as BeginPopupModal below, not from inside
+        // PushID(repo.name)/BeginChild("card"), or the two won't resolve to
+        // the same ImGuiID and the modal will never appear.
+        static std::string pending_repo;
+        static size_t      pending_plugin_count = 0;
+        bool               request_popup        = false;
+
+        for (const manifest_t& repo : repos)
+        {
+            ImGui::PushID(repo.name.c_str());
+
+            ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, rgba_t(0xffffff07).to_imvec4());
+            ImGui::PushStyleColor(ImGuiCol_Border, rgba_t(0xffffff14).to_imvec4());
+
+            ImGui::BeginChild("card",
+                              ImVec2(0, 0),
+                              ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY,
+                              ImGuiWindowFlags_NoScrollbar);
+            ImGui::TextUnformatted(repo.name.c_str());
+
+            if (!repo.url.empty())
+            {
+                ImGui::TextDisabled("Homepage:");
+                ImGui::SameLine(0, 4);
+                if (ImGui::TextLinkOpenURL(repo.url.c_str(), repo.url.c_str()))
+                    minimize_window();
+            }
+
+            if (!repo.git_hash.empty())
+                ImGui::TextDisabled("Commit: %.7s", repo.git_hash.c_str());
+
+            ImGui::Spacing();
+
+            ImGui::TextDisabled("Plugins:");
+            const float window_visible_x2 = ImGui::GetWindowPos().x + ImGui::GetCursorScreenPos().x;
+            bool        same_line         = true;
+            for (size_t i = 0; i < repo.plugins.size(); ++i)
+            {
+                if (same_line)
+                    ImGui::SameLine();
+                draw_tag(repo.plugins[i].name.c_str(), rgba_t(0x334c7fFF));
+
+                if (i + 1 < repo.plugins.size())
+                {
+                    const float last_x2 = ImGui::GetItemRectMax().x;
+                    const float next_w  = ImGui::CalcTextSize(repo.plugins[i + 1].name.c_str()).x + 12.0f;
+                    same_line           = last_x2 + ImGui::GetStyle().ItemSpacing.x + next_w < window_visible_x2;
+                }
+            }
+
+            const char* btn_label = "Uninstall";
+            float       btn_width = ImGui::CalcTextSize(btn_label).x + ImGui::GetStyle().FramePadding.x * 2;
+            ImGui::SetCursorPosX(ImGui::GetContentRegionAvail().x - btn_width + ImGui::GetCursorPosX());
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.12f, 0.12f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.20f, 0.20f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.45f, 0.08f, 0.08f, 1.0f));
+
+            if (ImGui::Button(btn_label))
+            {
+                pending_repo         = repo.name;
+                pending_plugin_count = repo.plugins.size();
+                request_popup        = true;
+            }
+            ImGui::PopStyleColor(3);
+
+            ImGui::EndChild();
+
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar();
+
+            ImGui::PopID();
+            ImGui::Spacing();
+        }
+
+        // Same ID-stack context as the OpenPopup call below: window root,
+        // no PushID, no child. This is what makes the two IDs actually match.
+        if (request_popup)
+            ImGui::OpenPopup("Confirm uninstall##uninstall_confirm");
+
+        if (ImGui::BeginPopupModal("Confirm uninstall##uninstall_confirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::Text("Remove '%s' and its %zu plugin(s)?", pending_repo.c_str(), pending_plugin_count);
+            ImGui::TextWrapped(
+                "This deletes the repository cache, its config, and all plugin configs under it. "
+                "This cannot be undone.");
+            ImGui::Spacing();
+
+            if (ImGui::Button("Cancel"))
+            {
+                pending_repo.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.12f, 0.12f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.20f, 0.20f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.45f, 0.08f, 0.08f, 1.0f));
+            if (ImGui::Button("Uninstall"))
+            {
+                MUST_OK(m_plugin_manager.RemoveRepo(pending_repo),
+                        spdlog::error("Failed to remove repository: {}", _r.error_v()));
+                pending_repo.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(3);
+
+            ImGui::EndPopup();
+        }
+    }
+    ImGui::End();
+
+    m_show_window.Set(SubWindow::UninstallPlugins, open);
+}
+
 void ScreenshotTool::StartInstall(const std::string& source)
 {
     // The UI only ever shows an enabled "Install" button while no install is
@@ -2604,10 +2767,6 @@ void ScreenshotTool::StartInstall(const std::string& source)
         state->confirm_pending = false;
         return state->confirm_answer;
     };
-
-    // Must happen before the thread starts: GitClient/PluginBuilder/
-    // PluginInstaller hold references into PluginManager's m_callbacks, so
-    // this needs to settle before anything can call into them concurrently.
     m_plugin_manager.SetCallbacks(cb);
 
     m_install_events.clear();

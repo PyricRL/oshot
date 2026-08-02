@@ -99,6 +99,7 @@ enum class SubWindow : size_t
     InstallPlugins,
     PluginInstallStatus,
     ManagePlugins,
+    UninstallPlugins,
     Logs,
     COUNT
 };
@@ -460,6 +461,7 @@ private:
     void DrawManagePluginsWindow();
     void DrawInstallPluginsWindow();
     void DrawPluginInstallStatus();
+    void DrawUninstallPluginsWindow();
     void DrawEventIcon(plugin_install_event_t::Kind kind);
 
     // Kicks off `source` (git URL / local folder / archive path) on a

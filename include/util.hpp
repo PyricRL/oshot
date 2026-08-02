@@ -34,9 +34,9 @@ enum class SavingOp;
 #  define OSHOT_TOOL_ON_MAIN_THREAD false
 #endif
 
-#define UNKNOWN "<u2n4kn6ow8n>"
+#define UNKNOWN "|<u2n4kn6ow8n>|"
 
-#define STBI_ERROR (stbi_failure_reason() ? stbi_failure_reason() : "Unknown Error")
+#define STBI_ERROR (stbi_failure_reason() ? stbi_failure_reason() : "Unknown stbi Error")
 
 // if Result is not ok(), return it's error
 #define TRY(expr)                     \
@@ -182,6 +182,7 @@ public:
     bool     ok() const { return m_ok; }
     E&       error() { return m_err; }
     const E& error() const { return m_err; }
+             operator bool() const { return ok(); }
 
     template <typename U = E, typename = typename U::value_type>
     typename U::value_type& error_v()
@@ -283,7 +284,7 @@ static inline const std::string version_infos = fmt::format(
     "Date: {}\n"
     "Tag: {}\n",
 #ifdef DISABLE_PLUGINS
-    "NO PLUGINS SUPPORT",
+    "NO PLUGINS SUPPORT\n",
 #endif
     VERSION,
     GIT_BRANCH,
@@ -447,12 +448,13 @@ inline struct GlfwGuard
     ~GlfwGuard() { extern_glfwTerminate(); }
 } glfw_guard;
 
-class CdGuard
+struct CdGuard
 {
-public:
     fs::path saved;
     CdGuard(const fs::path& p) : saved(fs::current_path())
     {
+        if (!fs::exists(p))
+            die("CdGuard: Path {} doesn't exist", p.string());
         if (!p.empty())
             fs::current_path(p);
     }

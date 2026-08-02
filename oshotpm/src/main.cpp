@@ -437,7 +437,7 @@ int main(int argc, char* argv[])
     };
 
     StateManager  state;
-    PluginManager plugin_manager(std::move(state), cb, true);
+    PluginManager plugin_manager(std::move(state), cb, /*is_cli=*/true);
     switch (op)
     {
         case INSTALL:

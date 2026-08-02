@@ -1,8 +1,5 @@
 #include "screenshot_tool.hpp"
 
-#include <tesseract/publictypes.h>
-#include <zbar.h>
-
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -49,10 +46,6 @@
 #endif
 
 using namespace std::chrono_literals;
-
-static constexpr ImVec4 error_color(1.0f, 0.0f, 0.0f, 1.0f);
-static constexpr ImVec2 origin(0, 0);
-static ImTextureRef     logo_texture;
 
 constexpr rgba_t::rgba_t(ImVec4 vec)
     : r(static_cast<uint8_t>(vec.x * 255.0f)),
@@ -230,16 +223,6 @@ static bool ui_blocks_selection()
     return true;
 }
 
-static ImVec4 get_confidence_color(const int confidence)
-{
-    if (confidence <= 45)
-        return ImVec4(1, 0, 0, 1);  // red
-    else if (confidence <= 70)
-        return ImVec4(1, 1, 0, 1);  // yellow
-
-    return ImVec4(0, 1, 0, 1);  // green
-}
-
 static bool create_timed_button(const std::string_view label1,
                                 const std::string_view label2,
                                 bool&                  armed,  // caller controls arming
@@ -409,7 +392,7 @@ Result<> ScreenshotTool::StartWindow()
     m_tool_textures[idx(ToolType::CopyImage)] = CreateTexture(nullptr, ICON_COPY_RGBA, ICON_COPY_W, ICON_COPY_H).get();
     m_tool_textures[idx(ToolType::SaveImage)] = CreateTexture(nullptr, ICON_SAVE_RGBA, ICON_SAVE_W, ICON_SAVE_H).get();
     m_tool_textures[idx(ToolType::Line)]      = CreateTexture(nullptr, ICON_LINE_RGBA, ICON_LINE_W, ICON_LINE_H).get();
-    logo_texture = CreateTexture(nullptr, OSHOT_LOGO_RGBA, OSHOT_LOGO_W, OSHOT_LOGO_H).get();
+    m_tool_textures[idx(ToolType::Logo)] = CreateTexture(nullptr, OSHOT_LOGO_RGBA, OSHOT_LOGO_W, OSHOT_LOGO_H).get();
 #endif
 
     // Placeholders for not crashing when used but not needed
@@ -441,9 +424,9 @@ void ScreenshotTool::RenderOverlay()
                                              ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                              ImGuiWindowFlags_NoBackground;
     // Overlay window
-    ImGui::SetNextWindowPos(origin);
+    ImGui::SetNextWindowPos(ImVec2(0,0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, origin);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
     ImGui::Begin("Screenshot Tool",
                  nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground |
@@ -877,6 +860,9 @@ void ScreenshotTool::HandleColorPickerInput()
     constexpr float k_offset   = 15.0f;   // distance from cursor to loupe corner
     constexpr float k_win_size = k_loupe_px + k_padding * 2.0f;
 
+    constexpr uint32_t shadow_color = rgba_t(0x000000B4).to_abgr();
+    constexpr uint32_t white_lines_color = rgba_t(0xffffffE6).to_abgr();
+
     // Position loupe window: prefer bottom-right, flip to stay on screen
     const ImVec2& display = ImGui::GetIO().DisplaySize;
     float         win_x   = mouse_pos.x + k_offset;
@@ -930,23 +916,23 @@ void ScreenshotTool::HandleColorPickerInput()
         constexpr float gap = 3.0f;  // gap around the centre dot
 
         // Shadow lines for contrast on any background
-        dl->AddLine(ImVec2(ctr.x - arm, ctr.y), ImVec2(ctr.x - gap, ctr.y), IM_COL32(0, 0, 0, 180), 1.5f);
-        dl->AddLine(ImVec2(ctr.x + gap, ctr.y), ImVec2(ctr.x + arm, ctr.y), IM_COL32(0, 0, 0, 180), 1.5f);
-        dl->AddLine(ImVec2(ctr.x, ctr.y - arm), ImVec2(ctr.x, ctr.y - gap), IM_COL32(0, 0, 0, 180), 1.5f);
-        dl->AddLine(ImVec2(ctr.x, ctr.y + gap), ImVec2(ctr.x, ctr.y + arm), IM_COL32(0, 0, 0, 180), 1.5f);
+        dl->AddLine(ImVec2(ctr.x - arm, ctr.y), ImVec2(ctr.x - gap, ctr.y), shadow_color, 1.5f);
+        dl->AddLine(ImVec2(ctr.x + gap, ctr.y), ImVec2(ctr.x + arm, ctr.y), shadow_color, 1.5f);
+        dl->AddLine(ImVec2(ctr.x, ctr.y - arm), ImVec2(ctr.x, ctr.y - gap), shadow_color, 1.5f);
+        dl->AddLine(ImVec2(ctr.x, ctr.y + gap), ImVec2(ctr.x, ctr.y + arm), shadow_color, 1.5f);
         // White lines on top
-        dl->AddLine(ImVec2(ctr.x - arm, ctr.y), ImVec2(ctr.x - gap, ctr.y), IM_COL32(255, 255, 255, 230), 1.0f);
-        dl->AddLine(ImVec2(ctr.x + gap, ctr.y), ImVec2(ctr.x + arm, ctr.y), IM_COL32(255, 255, 255, 230), 1.0f);
-        dl->AddLine(ImVec2(ctr.x, ctr.y - arm), ImVec2(ctr.x, ctr.y - gap), IM_COL32(255, 255, 255, 230), 1.0f);
-        dl->AddLine(ImVec2(ctr.x, ctr.y + gap), ImVec2(ctr.x, ctr.y + arm), IM_COL32(255, 255, 255, 230), 1.0f);
+        dl->AddLine(ImVec2(ctr.x - arm, ctr.y), ImVec2(ctr.x - gap, ctr.y), white_lines_color, 1.0f);
+        dl->AddLine(ImVec2(ctr.x + gap, ctr.y), ImVec2(ctr.x + arm, ctr.y), white_lines_color, 1.0f);
+        dl->AddLine(ImVec2(ctr.x, ctr.y - arm), ImVec2(ctr.x, ctr.y - gap), white_lines_color, 1.0f);
+        dl->AddLine(ImVec2(ctr.x, ctr.y + gap), ImVec2(ctr.x, ctr.y + arm), white_lines_color, 1.0f);
         // Centre dot, filled with the hovered colour so it's always visible
-        dl->AddCircleFilled(ctr, gap - 0.5f, IM_COL32(c.r, c.g, c.b, 255));
-        dl->AddCircle(ctr, gap - 0.5f, IM_COL32(255, 255, 255, 200), 12, 1.0f);
+        dl->AddCircleFilled(ctr, gap - 0.5f, c.to_abgr());
+        dl->AddCircle(ctr, gap - 0.5f, rgba_t(0xffffffC8).to_abgr(), 12, 1.0f);
 
         // Outline around the entire loupe image
         dl->AddRect(loupe_origin,
                     ImVec2(loupe_origin.x + k_loupe_px, loupe_origin.y + k_loupe_px),
-                    IM_COL32(80, 80, 80, 220),
+                    rgba_t(0x505050DC).to_abgr(),
                     2.0f,
                     1.5f,
                     ImDrawFlags_None);
@@ -977,8 +963,8 @@ void ScreenshotTool::HandleColorPickerInput()
     // Keeps a precise reference point visible even outside the loupe region.
     {
         ImDrawList* fg = ImGui::GetForegroundDrawList();
-        fg->AddCircle(mouse_pos, 5.0f, IM_COL32(0, 0, 0, 180), 12, 2.0f);
-        fg->AddCircleFilled(mouse_pos, 2.0f, IM_COL32(255, 255, 255, 255));
+        fg->AddCircle(mouse_pos, 5.0f, shadow_color, 12, 2.0f);
+        fg->AddCircleFilled(mouse_pos, 2.0f, rgba_t(0xffffffFF).to_abgr());
     }
 
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsKeyPressed(ImGuiKey_Escape))
@@ -1115,7 +1101,7 @@ void ScreenshotTool::DrawDarkOverlay()
     const float sel_w = m_selection.get_width();
     const float sel_h = m_selection.get_height();
 
-    constexpr ImU32 dark_color = IM_COL32(0, 0, 0, 120);
+    constexpr ImU32 dark_color = rgba_t(0x00000078).to_abgr();
 
     // Top rectangle
     draw_list->AddRectFilled(m_image_origin, ImVec2(m_image_end.x, sel_y), dark_color);
@@ -1146,7 +1132,7 @@ void ScreenshotTool::DrawSelectionBorder()
     // Draw selection border
     draw_list->AddRect(ImVec2(sel_x, sel_y),
                        ImVec2(sel_x + sel_w, sel_y + sel_h),
-                       IM_COL32(0, 150, 255, 255),
+                       rgba_t(0x0096ffFF).to_abgr(),
                        0.0f,
                        1.0f,
                        ImDrawFlags_None);
@@ -1160,12 +1146,12 @@ void ScreenshotTool::DrawSelectionBorder()
         ImVec2 min = ImVec2(pos.x - handle_draw_half, pos.y - handle_draw_half);
         ImVec2 max = ImVec2(pos.x + handle_draw_half, pos.y + handle_draw_half);
 
-        ImU32 color = IM_COL32(255, 255, 255, 255);
+        rgba_t color = rgba_t(0xffffffFF);
         if (m_handle_hover == type || m_dragging_handle == type)
-            color = IM_COL32(255, 255, 0, 255);  // Yellow
+            color.b = 0;  // Yellow
 
-        draw_list->AddRectFilled(min, max, color);
-        draw_list->AddRect(min, max, IM_COL32(255, 255, 255, 255), 0.0f, 2.0f, ImDrawFlags_None);
+        draw_list->AddRectFilled(min, max, color.to_abgr());
+        draw_list->AddRect(min, max, rgba_t(0xffffffFF).to_abgr(), 0.0f, 2.0f, ImDrawFlags_None);
     };
 
     // Corner handles
@@ -1344,7 +1330,7 @@ void ScreenshotTool::DrawMenuItems()
 
         // Centered image
         ImGui::SetCursorPosX((window_width - 24.0f) / 2);
-        ImGui::Image(logo_texture, ImVec2(32, 32));
+        ImGui::Image(m_tool_textures[idx(ToolType::Logo)], ImVec2(32, 32));
 
         // Centered labels
         text_display = centered_text("oshot v" VERSION);
@@ -1357,7 +1343,7 @@ void ScreenshotTool::DrawMenuItems()
 
 #ifdef DISABLE_PLUGINS
         text_display = centered_text("!!! NO PLUGINS SUPPORT !!!");
-        ImGui::TextColored(get_confidence_color(0), "%s", text_display.data());
+        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%s", text_display.data());
         ImGui::Spacing();
 #endif
 
@@ -1403,14 +1389,14 @@ void ScreenshotTool::DrawOcrTools()
 
     auto push_error_style = [](bool cond) {
         if (cond)
-            ImGui::PushStyleColor(ImGuiCol_Text, error_color);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
     };
     auto pop_error_label = [](bool cond, const char* label) {
         if (cond)
         {
             ImGui::PopStyleColor();
             ImGui::SameLine();
-            ImGui::TextColored(error_color, "%s", label);
+            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%s", label);
         }
     };
 
@@ -1477,7 +1463,7 @@ void ScreenshotTool::DrawOcrTools()
         if (invalid_model)
         {
             ImGui::SameLine();
-            ImGui::TextColored(error_color, "Invalid!");
+            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Invalid!");
         }
     }
 
@@ -1531,7 +1517,7 @@ void ScreenshotTool::DrawOcrTools()
         {
             ImGui::SameLine();
             ImGui::TextColored(
-                error_color, "Failed to initialize OCR: %s", GetError(ectx, OcrError::FailedToOCR).c_str());
+                ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Failed to initialize OCR: %s", GetError(ectx, OcrError::FailedToOCR).c_str());
         }
         else
         {
@@ -1543,8 +1529,14 @@ void ScreenshotTool::DrawOcrTools()
         {
             ImGui::BulletText("Confidence:");
             ImGui::SameLine();
+            ImVec4 confidence_color(0.0f, 1.0f, 0.0f, 1.0f); // green
+            if (m_inputs.ocr_results.confidence <= 45)
+                confidence_color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);  // red
+            else if (m_inputs.ocr_results.confidence <= 70)
+                confidence_color = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);  // yellow
+
             ImGui::TextColored(
-                get_confidence_color(m_inputs.ocr_results.confidence), "%d%%", m_inputs.ocr_results.confidence);
+                confidence_color, "%d%%", m_inputs.ocr_results.confidence);
 
             ImGui::BulletText("PSM: %s", m_inputs.ocr_results.psm_str.c_str());
             ImGui::TreePop();
@@ -1589,7 +1581,7 @@ void ScreenshotTool::DrawBarDecodeTools()
     if (HasError(ectx, ZbarError::FailedToScan))
     {
         ImGui::SameLine();
-        ImGui::TextColored(error_color, "Failed to decode: %s", GetError(ectx, ZbarError::FailedToScan).c_str());
+        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Failed to decode: %s", GetError(ectx, ZbarError::FailedToScan).c_str());
     }
     else if (!m_inputs.zbar_scan_result.datas.empty() && ImGui::TreeNode("Details"))
     {
@@ -2395,7 +2387,7 @@ void ScreenshotTool::DrawManagePluginsWindow()
     {
         if (m_install_state && m_install_state->running)
         {
-            ImGui::TextColored(get_confidence_color(0),
+            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
                                "An install is in progress, this list will refresh once it's done.");
             ImGui::End();
             m_show_window.Set(SubWindow::ManagePlugins, open);
@@ -2520,7 +2512,7 @@ void ScreenshotTool::DrawManagePluginsWindow()
                     if (is_missing)
                     {
                         ImGui::TextColored(
-                            get_confidence_color(0), "Library not found at: %s", plugin.library.string().c_str());
+                            ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Library not found at: %s", plugin.library.string().c_str());
                     }
                     else
                     {
@@ -2605,7 +2597,7 @@ void ScreenshotTool::DrawUninstallPluginsWindow()
 
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             draw_list->AddRectFilled(p0, ImVec2(p0.x + size.x, p0.y + size.y), col.to_abgr(), 4.0f);
-            draw_list->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), IM_COL32_WHITE, label);
+            draw_list->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), rgba_t(0xffffffFF).to_abgr(), label);
 
             ImGui::Dummy(size);
         };
@@ -2624,8 +2616,8 @@ void ScreenshotTool::DrawUninstallPluginsWindow()
             ImGui::PushID(repo.name.c_str());
 
             ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, rgba_t(0xffffff07).to_imvec4());
-            ImGui::PushStyleColor(ImGuiCol_Border, rgba_t(0xffffff14).to_imvec4());
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(1.0f, 1.0f, 1.0f, 0.027f));
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 0.078f));
 
             ImGui::BeginChild("card",
                               ImVec2(0, 0),
@@ -2647,7 +2639,7 @@ void ScreenshotTool::DrawUninstallPluginsWindow()
             ImGui::Spacing();
 
             ImGui::TextDisabled("Plugins:");
-            const float window_visible_x2 = ImGui::GetWindowPos().x + ImGui::GetCursorScreenPos().x;
+            const float window_visible_x2 = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
             bool        same_line         = true;
             for (size_t i = 0; i < repo.plugins.size(); ++i)
             {
@@ -2794,7 +2786,7 @@ void ScreenshotTool::DrawInstallPluginsWindow()
     ImGui::SetNextWindowSize(ImVec2(560, 220), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Install plugins##install_plugins_window", &open, ImGuiWindowFlags_NoSavedSettings))
     {
-        ImGui::TextColored(get_confidence_color(0), "NOTE: PLUGINS CAN HAVE MALWARE. INSTALL THEM AT YOUR OWN RISK");
+        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "NOTE: PLUGINS CAN HAVE MALWARE. INSTALL THEM AT YOUR OWN RISK");
         ImGui::Spacing();
         ImGui::TextWrapped(
             "Accepts a git repository URL, a local folder with a manifest and source code, "
@@ -3427,6 +3419,7 @@ void ScreenshotTool::DrawAnnotations()
             case ToolType::ToggleTextTools:
             case ToolType::CopyImage:
             case ToolType::SaveImage:
+            case ToolType::Logo:
             case ToolType::Count:           break;
         }
     };
@@ -3457,7 +3450,6 @@ void ScreenshotTool::Cancel()
     };
 
     delete_texture(m_texture_id);
-    delete_texture(logo_texture);
     for (auto& tex : m_tool_textures)
         delete_texture(tex);
 
@@ -3952,7 +3944,7 @@ void ScreenshotTool::CreateCopyTextButton(const std::string& text_copy)
     {
         ImGui::SameLine();
         ImGui::TextColored(
-            error_color, "Failed to copy text: %s", GetError(ectx, GeneralError::FailedToCopyText).c_str());
+            ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Failed to copy text: %s", GetError(ectx, GeneralError::FailedToCopyText).c_str());
     }
 }
 

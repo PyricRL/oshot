@@ -424,9 +424,9 @@ void ScreenshotTool::RenderOverlay()
                                              ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                              ImGuiWindowFlags_NoBackground;
     // Overlay window
-    ImGui::SetNextWindowPos(ImVec2(0,0));
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::Begin("Screenshot Tool",
                  nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground |
@@ -860,7 +860,7 @@ void ScreenshotTool::HandleColorPickerInput()
     constexpr float k_offset   = 15.0f;   // distance from cursor to loupe corner
     constexpr float k_win_size = k_loupe_px + k_padding * 2.0f;
 
-    constexpr uint32_t shadow_color = rgba_t(0x000000B4).to_abgr();
+    constexpr uint32_t shadow_color      = rgba_t(0x000000B4).to_abgr();
     constexpr uint32_t white_lines_color = rgba_t(0xffffffE6).to_abgr();
 
     // Position loupe window: prefer bottom-right, flip to stay on screen
@@ -1516,8 +1516,9 @@ void ScreenshotTool::DrawOcrTools()
         if (HasError(ectx, OcrError::FailedToOCR))
         {
             ImGui::SameLine();
-            ImGui::TextColored(
-                ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Failed to initialize OCR: %s", GetError(ectx, OcrError::FailedToOCR).c_str());
+            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
+                               "Failed to initialize OCR: %s",
+                               GetError(ectx, OcrError::FailedToOCR).c_str());
         }
         else
         {
@@ -1529,14 +1530,13 @@ void ScreenshotTool::DrawOcrTools()
         {
             ImGui::BulletText("Confidence:");
             ImGui::SameLine();
-            ImVec4 confidence_color(0.0f, 1.0f, 0.0f, 1.0f); // green
+            ImVec4 confidence_color(0.0f, 1.0f, 0.0f, 1.0f);  // green
             if (m_inputs.ocr_results.confidence <= 45)
                 confidence_color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);  // red
             else if (m_inputs.ocr_results.confidence <= 70)
                 confidence_color = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);  // yellow
 
-            ImGui::TextColored(
-                confidence_color, "%d%%", m_inputs.ocr_results.confidence);
+            ImGui::TextColored(confidence_color, "%d%%", m_inputs.ocr_results.confidence);
 
             ImGui::BulletText("PSM: %s", m_inputs.ocr_results.psm_str.c_str());
             ImGui::TreePop();
@@ -1581,7 +1581,8 @@ void ScreenshotTool::DrawBarDecodeTools()
     if (HasError(ectx, ZbarError::FailedToScan))
     {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Failed to decode: %s", GetError(ectx, ZbarError::FailedToScan).c_str());
+        ImGui::TextColored(
+            ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Failed to decode: %s", GetError(ectx, ZbarError::FailedToScan).c_str());
     }
     else if (!m_inputs.zbar_scan_result.datas.empty() && ImGui::TreeNode("Details"))
     {
@@ -2511,8 +2512,9 @@ void ScreenshotTool::DrawManagePluginsWindow()
 
                     if (is_missing)
                     {
-                        ImGui::TextColored(
-                            ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Library not found at: %s", plugin.library.string().c_str());
+                        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
+                                           "Library not found at: %s",
+                                           plugin.library.string().c_str());
                     }
                     else
                     {
@@ -2786,7 +2788,8 @@ void ScreenshotTool::DrawInstallPluginsWindow()
     ImGui::SetNextWindowSize(ImVec2(560, 220), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Install plugins##install_plugins_window", &open, ImGuiWindowFlags_NoSavedSettings))
     {
-        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "NOTE: PLUGINS CAN HAVE MALWARE. INSTALL THEM AT YOUR OWN RISK");
+        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
+                           "NOTE: PLUGINS CAN HAVE MALWARE. INSTALL THEM AT YOUR OWN RISK");
         ImGui::Spacing();
         ImGui::TextWrapped(
             "Accepts a git repository URL, a local folder with a manifest and source code, "
@@ -3943,8 +3946,9 @@ void ScreenshotTool::CreateCopyTextButton(const std::string& text_copy)
     if (HasError(ectx, GeneralError::FailedToCopyText))
     {
         ImGui::SameLine();
-        ImGui::TextColored(
-            ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Failed to copy text: %s", GetError(ectx, GeneralError::FailedToCopyText).c_str());
+        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
+                           "Failed to copy text: %s",
+                           GetError(ectx, GeneralError::FailedToCopyText).c_str());
     }
 }
 

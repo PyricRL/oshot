@@ -41,7 +41,7 @@ enum class ToolType : size_t
     ToggleTextTools,
     CopyImage,
     SaveImage,
-    Logo, // not actually a tooltype
+    Logo,  // not actually a tooltype
     Count
 };
 

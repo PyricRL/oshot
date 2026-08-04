@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "cache.hpp"
 #include "clipboard.hpp"
 #include "config.hpp"
 #include "dotenv.hpp"
@@ -210,7 +211,7 @@ void fit_to_screen(capture_result_t& img)
     bool ok = stbir_resize_uint8_linear(img.data.data(), img_w, img_h, 0, resized.data(), new_w, new_h, 0, STBIR_RGBA);
     if (!ok)
     {
-        warn("Failed to resize image: {}", STBI_ERROR);
+        spdlog::warn("Failed to resize image: {}", STBI_ERROR);
         return;
     }
 
@@ -263,7 +264,7 @@ Result<capture_result_t> load_image_rgba(const std::string& path)
     }
 
     if (!pixels)
-        return Err("Failed to load image: " + STBI_ERROR);
+        return Err("Failed to load image: {}", STBI_ERROR);
 
     result.w = width;
     result.h = height;
@@ -286,7 +287,7 @@ Result<std::string> get_config_image_out_fmt()
     }
     catch (fmt::format_error& err)
     {
-        return Err("Bad image output format string: " + std::string(err.what()));
+        return Err("Bad image output format string: {}", std::string(err.what()));
     }
     return Ok(out_path);
 }
@@ -609,6 +610,38 @@ fs::path get_home_pictures_dir()
 }
 #endif
 
+void register_window_callbacks(void (*minimize_fn)(),
+                               void (*maximize_fn)(),
+                               void (*terminate_fn)(),
+                               void (*swap_interval_fn)(int))
+{
+    g_minimize_fn      = minimize_fn;
+    g_maximize_fn      = maximize_fn;
+    g_terminate_fn     = terminate_fn;
+    g_swap_interval_fn = swap_interval_fn;
+}
+
+void minimize_window()
+{
+    if (g_minimize_fn)
+        g_minimize_fn();
+}
+void maximize_window()
+{
+    if (g_maximize_fn)
+        g_maximize_fn();
+}
+void extern_glfwTerminate()
+{
+    if (g_terminate_fn)
+        g_terminate_fn();
+}
+void extern_glfwSwapInterval(int v)
+{
+    if (g_swap_interval_fn)
+        g_swap_interval_fn(v);
+}
+
 std::string expand_var(std::string ret)
 {
     if (ret.empty())
@@ -713,14 +746,14 @@ void build_font_atlas(ImGuiIO& io)
         const fs::path& path = get_font_path(font);
         if (path.empty())
         {
-            warn("Font '{}' not found, skipping", font);
+            spdlog::warn("Font '{}' not found, skipping", font);
             continue;
         }
 
         ImFont* f = io.Fonts->AddFontFromFileTTF(path.string().c_str(), 16.0f, &font_cfg);
         if (!f)
         {
-            warn("Font '{}' failed to load", font);
+            spdlog::warn("Font '{}' failed to load", font);
             continue;
         }
 

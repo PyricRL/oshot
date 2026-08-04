@@ -4,21 +4,27 @@
 #include <algorithm>
 #include <atomic>
 #include <bitset>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <deque>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
+#include <thread>
+#include <unordered_map>
 #include <utility>
 
-#include "cache.hpp"
-#include "config.hpp"
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
 #include "screen_capture.hpp"
 #include "text_extraction.hpp"
 #include "util.hpp"
+
+#ifndef DISABLE_PLUGINS
+#  include "../oshotpm/include/plugin_manager.hpp"
+#endif
 
 enum class ToolType : size_t
 {
@@ -35,10 +41,11 @@ enum class ToolType : size_t
     ToggleTextTools,
     CopyImage,
     SaveImage,
+    Logo,  // not actually a tooltype
     Count
 };
 
-enum class ToolState
+enum class ToolState : size_t
 {
     Idle,
     Capturing,
@@ -78,7 +85,40 @@ enum class PrefTab
 {
     kNone    = -1,
     Defaults = 0,
+#ifndef DISABLE_PLUGINS
+    Plugins,
+#endif
     Theme
+};
+
+enum class SubWindow : size_t
+{
+    OcrDownload,
+    About,
+    Preferences,
+    MainTextTools,
+    InstallPlugins,
+    PluginInstallStatus,
+    ManagePlugins,
+    UninstallPlugins,
+    Logs,
+    COUNT
+};
+
+// Used for config.hpp
+enum class ColorPickerAlpha
+{
+    Disabled,  // alpha channel is not editable
+    Inline,    // alpha editable via the picker's inline slider
+    Bar,       // alpha editable via a dedicated alpha bar, too
+};
+
+enum class CurrentAction
+{
+    IsDrawing,
+    IsColorPicking,
+    IsTextPlacing,
+    COUNT
 };
 
 enum class OcrDownloadError : size_t
@@ -93,7 +133,8 @@ enum class OcrError : size_t
 {
     InvalidModel,
     InvalidPath,
-    FailedToScan,
+    NeedToScanDir,
+    FailedToOCR,
     COUNT
 };
 
@@ -131,10 +172,10 @@ struct annotation_t
     ToolType             type = ToolType::kNone;
     point_t              start;
     point_t              end;
-    std::string          text;                                       // For text tool
-    std::uint8_t         count = 0;                                  // For CounterBubble tool
-    std::vector<point_t> points;                                     // For pencil tool
-    rgba_t               color     = rgba_t::from_rgba(0xFF0000FF);  // RGBA
+    std::string          text;                            // For text tool
+    std::uint8_t         count = 0;                       // For CounterBubble tool
+    std::vector<point_t> points;                          // For pencil tool
+    rgba_t               color     = rgba_t(0xFF0000FF);  // RGBA
     float                thickness = 3.0f;
 };
 
@@ -155,23 +196,63 @@ struct inputs_results_t
     std::string resolved_ann_font_path;
 };
 
-template <typename Enum>
-struct ErrorContext
+#ifndef DISABLE_PLUGINS
+// One entry pushed by a PluginCallbacks::on_* call. Produced on the install
+// worker thread, only ever read/cleared on the render thread.
+struct plugin_install_event_t
 {
-    std::bitset<idx(Enum::COUNT)>             flags;
-    std::array<std::string, idx(Enum::COUNT)> texts;
-
-    void Set(Enum e, std::string_view msg = {})
+    enum class Kind
     {
-        flags.set(idx(e));
-        texts[idx(e)] = msg;
-    }
+        Status,
+        Success,
+        Warning,
+        Error,
+        Info
+    };
 
-    void Clear(Enum e)
-    {
-        flags.reset(idx(e));
-        texts[idx(e)].clear();
-    }
+    Kind        kind;
+    std::string text;
+};
+
+// A node in the status window's tree. `in_progress` nodes are the ones a
+// following non-Status event resolves in place instead of appending a new
+// node for.
+struct install_node_t
+{
+    plugin_install_event_t::Kind kind;
+    std::string                  text;
+    std::vector<std::string>     details;
+    bool                         in_progress;
+};
+
+// Shared between the render thread and the install worker thread for the
+// duration of a single install operation. Owned via shared_ptr so the
+// worker thread can safely finish writing to it even if the UI tears down
+// its own reference first (e.g. the person closes the app mid-install).
+struct plugin_install_state_t
+{
+    std::atomic<bool> running{ true };
+
+    std::mutex                         events_mutex;
+    std::deque<plugin_install_event_t> pending_events;
+
+    std::mutex              confirm_mutex;
+    std::condition_variable confirm_cv;
+    std::string             confirm_prompt;
+    bool                    confirm_pending  = false;
+    bool                    confirm_answered = false;
+    bool                    confirm_answer   = false;
+};
+#endif
+
+template <typename Enum>
+struct GeneralContext
+{
+    std::bitset<idx(Enum::COUNT)> flags;
+
+    void Set(Enum e, bool flag = true) { flags.set(idx(e), flag); }
+
+    void Clear(Enum e) { flags.reset(idx(e)); }
 
     bool Has(Enum e) const { return flags.test(idx(e)); }
 
@@ -180,6 +261,24 @@ struct ErrorContext
     {
         return (Has(e) || ...);
     }
+};
+
+template <typename Enum>
+struct ErrorContext : public GeneralContext<Enum>
+{
+    std::array<std::string, idx(Enum::COUNT)> texts;
+
+    void Set(Enum e, std::string_view msg = {})
+    {
+        GeneralContext<Enum>::Set(e);
+        texts[idx(e)] = msg;
+    }
+
+    void Clear(Enum e)
+    {
+        GeneralContext<Enum>::Clear(e);
+        texts[idx(e)].clear();
+    }
 
     const std::string& Get(Enum e) const { return texts[idx(e)]; }
 };
@@ -187,22 +286,14 @@ struct ErrorContext
 class ScreenshotTool
 {
 public:
-    ScreenshotTool()
-        : m_inputs{ g_config->File.ocr_path,
-                    g_config->File.ocr_model,
-                    g_config->File.ocr_get_repo,
-#if defined(__unix__) && !defined(__APPLE__)
-                    get_config_dir() / "models",
-#else
-                    "./models",
+#ifndef DISABLE_PLUGINS
+    ScreenshotTool(StateManager&& state) : m_plugin_manager(std::move(state), m_plugin_cb, /*is_cli=*/false) {}
+    ~ScreenshotTool()
+    {
+        if (m_install_thread.joinable())
+            m_install_thread.join();
+    }
 #endif
-                    {},
-                    "",
-                    {},
-                    "",
-                    "" },
-          m_current_color(rgba_t(g_cache->GetValue(CacheEntry::AnnColor, 0xFF0000FF)))
-    {}
 
     Result<>             Start();
     Result<>             StartWindow();
@@ -215,6 +306,8 @@ public:
     {
         m_tool_textures[idx(type)]._TexID = static_cast<ImTextureID>(size_t(tex));
     }
+
+    auto& GetImGuiIDTexts() { return m_imgui_id_texts; }
 
     void SetOnImageReload(std::function<void(const capture_result_t&)> fn) { m_on_image_reload = std::move(fn); }
 
@@ -305,7 +398,6 @@ private:
     selection_rect_t m_drag_start_selection;
 
     inputs_results_t m_inputs;
-    bool             m_show_text_tools = true;
 
     ImVec2 m_drag_start_mouse;
     ImVec2 m_image_origin;
@@ -318,15 +410,30 @@ private:
     std::function<void(const capture_result_t&)>                   m_on_image_reload;
     std::function<void(SavingOp, const Result<capture_result_t>&)> m_on_complete;
 
-    std::array<ImTextureRef, idx(ToolType::Count)> m_tool_textures{};
+    std::string                                    m_last_scanned_ocr_path;
+    GeneralContext<SubWindow>                      m_show_window;
+    GeneralContext<CurrentAction>                  m_current_actions;
+    std::array<ImTextureRef, idx(ToolType::Count)> m_tool_textures;
     ToolType                                       m_current_tool = ToolType::kNone;
     std::vector<annotation_t>                      m_annotations;
     annotation_t                                   m_current_annotation;
     rgba_t                                         m_current_color;
+    std::unordered_map<std::string, std::string*>  m_imgui_id_texts;
     std::array<float, idx(ToolType::Count)>        m_tool_thickness;
-    bool                                           m_is_drawing       = false;
-    bool                                           m_is_color_picking = false;
-    bool                                           m_is_text_placing  = false;
+
+#ifndef DISABLE_PLUGINS
+    // m_plugin_cb must be declared (and therefore constructed) before
+    // m_plugin_manager: the constructor initializes m_plugin_manager with a
+    // copy of m_plugin_cb, so the reverse order would copy a not-yet-
+    // constructed PluginCallbacks.
+    PluginCallbacks m_plugin_cb;
+    PluginManager   m_plugin_manager;
+
+    std::string                             m_install_source;  // text field backing the install window
+    std::thread                             m_install_thread;
+    std::shared_ptr<plugin_install_state_t> m_install_state;
+    std::vector<install_node_t>             m_install_events;
+#endif
 
     void CreateCopyTextButton(const std::string& text);
     void RefreshOcrModels();
@@ -349,6 +456,21 @@ private:
     void DrawAnnotationToolbar();
     void DrawPreferencesWindow();
     void DrawDownloadOCRWindow();
+    void DrawLogsWindow();
+
+#ifndef DISABLE_PLUGINS
+    void DrawManagePluginsWindow();
+    void DrawInstallPluginsWindow();
+    void DrawPluginInstallStatus();
+    void DrawUninstallPluginsWindow();
+    void DrawEventIcon(plugin_install_event_t::Kind kind);
+
+    // Kicks off `source` (git URL / local folder / archive path) on a
+    // background thread. Wires fresh PluginCallbacks around a new
+    // plugin_install_state_t so the render thread can drain progress from
+    // it without touching ImGui from off the render thread.
+    void StartInstall(const std::string& source);
+#endif
 
     void UpdateHandleHoverState();
     void UpdateCursor();
@@ -364,6 +486,7 @@ private:
     }
 };
 
+extern ScreenshotTool          g_ss_tool;
 extern std::deque<std::string> g_dropped_paths;
 
 #endif  // !_SCREENSHOT_TOOL_HPP_

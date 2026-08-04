@@ -34,8 +34,10 @@
 #include "screen_capture.hpp"
 #include "screenshot_tool.hpp"
 #include "spdlog/sinks/basic_file_sink.h"
+#include "spdlog/sinks/ringbuffer_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "switch_fnv1a.hpp"
+#include "texts.hpp"
 #include "tinyfiledialogs.h"
 #include "tray.hpp"
 #include "util.hpp"
@@ -62,14 +64,6 @@ struct GLFWwindow;
      ? (bool) (optarg = argv[optind++]) \
      : (optarg != NULL))
 // clang-format on
-
-// Extern variables declariaions
-std::deque<std::string> g_dropped_paths;
-std::unique_ptr<Config> g_config;
-std::unique_ptr<Cache>  g_cache;
-bool                    g_is_systray = false;
-int                     g_scr_w{}, g_scr_h{};
-Clipboard               g_clipboard(SessionType::Unknown);
 
 std::error_code ec;
 
@@ -138,7 +132,6 @@ static bool parseargs(int argc, char* argv[], const fs::path& configFile)
         {"source",  required_argument, 0, 'f'},
         {"override",required_argument, 0, 'O'},
 
-        {"debug",      no_argument,       0, "debug"_fnv1a16},
         {"gen-config", optional_argument, 0, "gen-config"_fnv1a16},
 
         {0,0,0,0}
@@ -170,8 +163,6 @@ static bool parseargs(int argc, char* argv[], const fs::path& configFile)
                 g_config->Runtime.only_launch_tray = true; break;
             case 'g':
                 g_config->Runtime.only_launch_gui = true; break;
-            case "debug"_fnv1a16:
-                g_config->Runtime.debug_print = true; break;
 
             case "gen-config"_fnv1a16:
                 if (OPTIONAL_ARGUMENT_IS_PRESENT)
@@ -198,6 +189,10 @@ static bool                    do_copy_image = false;
 
 void exit_handler(int)
 {
+    static std::atomic_flag ran = ATOMIC_FLAG_INIT;
+    if (ran.test_and_set())
+        return;
+
     quit.store(true);
     cv.notify_all();
 #ifndef _WIN32
@@ -241,7 +236,7 @@ void capture_worker()
             do_copy_image        = false;
             capture_result_t img = std::move(pending_image);
             lk.unlock();
-            MUST_OK(g_clipboard.CopyImage(img), error("{}", _r.error_v()));
+            MUST_OK(g_clipboard.CopyImage(img), spdlog::error("{}", _r.error_v()));
             continue;
         }
 
@@ -378,7 +373,8 @@ int main(int argc, char* argv[])
     }
 
     auto           console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    spdlog::logger logger("oshot_logger", { console, file });
+    auto           imgui   = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(500);  // keep last 500 lines
+    spdlog::logger logger("oshot_logger", { console, file, imgui });
     spdlog::set_default_logger(std::make_shared<spdlog::logger>(logger));
 
     // [2026-03-10 17:24:07.593] [DEBUG] <col>message</col>
@@ -401,7 +397,7 @@ int main(int argc, char* argv[])
     if (!g_config->File.theme_file_path.empty())
         g_config->LoadThemeFile(g_config->File.theme_file_path);
 
-    spdlog::set_level(g_config->Runtime.debug_print ? spdlog::level::debug : spdlog::level::info);
+    spdlog::set_level(spdlog::level::debug);
 
     logger.info("=== oshot starting ===");
     logger.info("Log file path: {}", file->filename());

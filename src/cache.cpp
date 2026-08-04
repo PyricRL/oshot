@@ -1,37 +1,19 @@
 #include "cache.hpp"
 
 #include <filesystem>
-#include <fstream>
 #include <string>
 
-#include "fmt/format.h"
-#include "toml++/toml.hpp"
 #include "util.hpp"
-
-// https://github.com/hyprwm/Hyprland/blob/2d2a5bebff72c73cd27db3b9e954b8fa2a7623e8/hyprpm/src/core/DataState.cpp#L24
-static bool write_cache(const std::string& str, const std::string& to)
-{
-    // create temp file in a safe temp root
-    const fs::path temp_state = (fs::temp_directory_path() / ".temp-cache");
-    std::ofstream  of(temp_state, std::ios::trunc);
-    if (!of.good())
-        return false;
-
-    of << str;
-    of.close();
-
-    return fs::copy_file(temp_state, to, fs::copy_options::overwrite_existing);
-}
 
 Cache::Cache(const std::string& cache_dir) : m_cache_dir_path(cache_dir)
 {
     if (!fs::exists(cache_dir))
     {
-        warn("Oshot cache folder was not found. Creating folders at {}!", cache_dir);
+        spdlog::warn("Oshot cache folder was not found. Creating folders at {}!", cache_dir);
         fs::create_directories(cache_dir);
     }
 
-    MUST_OK(LoadCacheFile(), error("{}", _r.error_v()));
+    MUST_OK(LoadCacheFile(), spdlog::error("{}", _r.error_v()));
 }
 
 Cache::~Cache()
@@ -43,7 +25,7 @@ Cache::~Cache()
           "# YOU GONNA MESS SHIT UP. unless you know what you doing ofc\n";
     ss << m_tbl;
 
-    if (!write_cache(ss.str(), mk_file_path))
+    if (!SaveFile(ss.str(), mk_file_path))
         error("Failed to write cache entry at path '{}'", mk_file_path);
 }
 
@@ -54,22 +36,5 @@ Result<> Cache::LoadCacheFile()
     // snapshot and switch to that directory.
     CdGuard guard(m_cache_dir_path);
 
-    try
-    {
-        if (fs::exists(mk_file_path))
-            m_tbl = toml::parse_file(mk_file_path);
-    }
-    catch (const toml::parse_error& err)
-    {
-        return Err(
-            fmt::format("Parsing cache file '{}' failed:\n"
-                        "{}\n"
-                        "\t(error occurred at line {} column {})",
-                        mk_file_path,
-                        err.description(),
-                        err.source().begin.line,
-                        err.source().begin.column));
-    }
-
-    return Ok();
+    return LoadFile(mk_file_path);
 }

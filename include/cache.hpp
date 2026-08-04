@@ -1,12 +1,14 @@
 #ifndef _CACHE_HPP_
 #define _CACHE_HPP_
 
+#include <array>
 #include <string>
-#include <unordered_map>
 
-#define TOML_HEADER_ONLY 0
-#include "toml++/toml.hpp"
+#include "toml_api.hpp"
 #include "util.hpp"
+
+// util.hpp
+std::string expand_var(std::string ret);
 
 enum class CacheEntry
 {
@@ -15,7 +17,7 @@ enum class CacheEntry
     COUNT
 };
 
-class Cache
+class Cache : public TomlAPI
 {
 public:
     Cache(const std::string& cache_dir);
@@ -25,51 +27,33 @@ public:
 
     const std::string& GetCacheDirPath() const { return m_cache_dir_path; }
 
-    /**
-     * Get value of a cache variables
-     * @param value The cache variable "path" (e.g "cache.source-path")
-     * @param fallback Default value if couldn't retrive value
-     */
+    using TomlAPI::GetValue;
+    using TomlAPI::SetValue;
+
+    // CacheEntry convenience overloads are the ONLY thing Cache needs to add now
     template <typename T>
     T GetValue(CacheEntry e, const T& fallback, bool dont_expand_var = false)
     {
-        const std::string&      key = m_cache_entries.at(e);
-        const std::optional<T>& ret = m_tbl["cache"][key].value<T>();
-        if constexpr (toml::is_string<T>)
-            if (!dont_expand_var)
-                return ret ? expand_var(ret.value()) : expand_var(fallback);
-            else
-                return ret ? ret.value() : fallback;
-        else
-            return ret.value_or(fallback);
+        return GetValue<T>(mk_cache_entries.at(idx(e)), fallback, dont_expand_var);
     }
 
-    /**
-     * Set value of a cache variables
-     * @param path The cache variable "path" (e.g "cache.source-path")
-     */
     template <typename T>
     void SetValue(CacheEntry e, const T& value)
     {
-        const std::string& key     = m_cache_entries.at(e);
-        auto*              section = m_tbl["cache"].as_table();
-        if (!section)
-        {
-            m_tbl.insert_or_assign("cache", toml::table{});
-            section = m_tbl["cache"].as_table();
-        }
-        section->insert_or_assign(key, value);
+        SetValue<T>(mk_cache_entries.at(idx(e)), value);
     }
+
+protected:
+    std::string BuildKey(const std::string_view key) const override { return fmt::format("cache.{}", key); }
 
 private:
     static constexpr const char* mk_file_path = "cache.toml";
 
     std::string m_cache_dir_path;
-    toml::table m_tbl;
 
-    std::unordered_map<CacheEntry, std::string> m_cache_entries = {
-        { CacheEntry::AnnColor, "default-color-picker-color" },
-        { CacheEntry::ImgSavePath, "last-saved-dir" },
+    static constexpr std::array<std::string_view, idx(CacheEntry::COUNT)> mk_cache_entries = {
+        "default-color-picker-color",
+        "last-saved-dir"
     };
 };
 

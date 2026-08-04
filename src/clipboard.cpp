@@ -32,7 +32,7 @@ Result<int> start_linux_copy(SessionType session, const std::string_view mime_ty
 
     int copy_pipe[2];
     if (pipe(copy_pipe) == -1)
-        return Err("Failed to open stdin pipe: " + std::string(strerror(errno)));
+        return Err("Failed to open stdin pipe: {}", strerror(errno));
 
     clip_pid = fork();
 
@@ -61,7 +61,7 @@ Result<int> start_linux_copy(SessionType session, const std::string_view mime_ty
     if (clip_pid < 0)
     {
         close(copy_pipe[1]);
-        return Err("Failed to fork: " + std::string(strerror(errno)));
+        return Err("Failed to fork: {}", strerror(errno));
     }
 
     return Ok(copy_pipe[1]);
@@ -82,7 +82,7 @@ Result<> Clipboard::CopyText(const std::string& text)
         if (write(fd, text.c_str(), text.size()) == -1)
         {
             close(fd);
-            return Err("Failed to copy text: " + std::string(strerror(errno)));
+            return Err("Failed to copy text: {}", strerror(errno));
         }
 
         close(fd);
@@ -110,7 +110,7 @@ Result<> Clipboard::CopyImage(const capture_result_t& cap)
         if (write(fd, reinterpret_cast<const char*>(png.data()), png.size()) == -1)
         {
             close(fd);
-            return Err("Failed to write image to stdin: " + std::string(strerror(errno)));
+            return Err("Failed to write image to stdin: {}", strerror(errno));
         }
 
         close(fd);

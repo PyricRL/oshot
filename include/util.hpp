@@ -2,6 +2,7 @@
 #define _UTIL_HPP_
 
 #include <filesystem>
+#include <iostream>
 #include <string>
 #include <utility>
 #include <variant>
@@ -11,6 +12,7 @@
 #include "fmt/color.h"
 #include "nvdialog/nvdialog_core.h"
 #include "nvdialog/nvdialog_dialog.h"
+#include "nvdialog/nvdialog_error.h"
 #include "spdlog/spdlog.h"
 #include "version.h"
 
@@ -32,10 +34,11 @@ enum class SavingOp;
 #  define OSHOT_TOOL_ON_MAIN_THREAD false
 #endif
 
-#define STBI_ERROR std::string(stbi_failure_reason() ? stbi_failure_reason() : "Unknown Error")
+#define UNKNOWN "|<u2n4kn6ow8n>|"
 
-// These macros are just for conviniences, nothing else
-// They kinda suck ngl
+#define STBI_ERROR (stbi_failure_reason() ? stbi_failure_reason() : "Unknown stbi Error")
+
+// if Result is not ok(), return it's error
 #define TRY(expr)                     \
     do                                \
     {                                 \
@@ -44,14 +47,16 @@ enum class SavingOp;
             return Err(_r.error_v()); \
     } while (0)
 
-#define TRY_MSG(expr, fmtstr, ...)                                                    \
-    do                                                                                \
-    {                                                                                 \
-        auto&& _r = (expr);                                                           \
-        if (!_r.ok())                                                                 \
-            return Err(fmt::format(fmtstr __VA_OPT__(, ) __VA_ARGS__, _r.error_v())); \
+// TRY() with fmt::format()
+#define TRY_MSG(expr, fmtstr, ...)                                       \
+    do                                                                   \
+    {                                                                    \
+        auto&& _r = (expr);                                              \
+        if (!_r.ok())                                                    \
+            return Err(fmtstr __VA_OPT__(, ) __VA_ARGS__, _r.error_v()); \
     } while (0)
 
+// if Result is not ok(), execute on_err code
 #define MUST_OK(expr, on_err) \
     do                        \
     {                         \
@@ -84,12 +89,31 @@ struct Err
 {
     using value_type = E;
     E value;
+
+    Err() = default;
+
+    // Generic single-value ctor: Err(42), Err(some_error_code), Err(std::string{...})
+    template <typename U>
+        requires std::constructible_from<E, U&&> && (!std::same_as<std::remove_cvref_t<U>, Err>)
+    Err(U&& v) : value(std::forward<U>(v))
+    {}
+
+    // fmt-powered ctor: Err("failed: {}", code, ...)
+    template <typename... Args>
+        requires(sizeof...(Args) >= 1) && std::constructible_from<E, std::string>
+    Err(fmt::format_string<Args...> fmt_str, Args&&... args) : value(fmt::format(fmt_str, std::forward<Args>(args)...))
+    {}
 };
 template <typename E>
 Err(E) -> Err<E>;
+Err(const char*) -> Err<std::string>;
+
+template <typename... Args>
+    requires(sizeof...(Args) >= 1)
+Err(fmt::format_string<Args...>, Args&&...) -> Err<std::string>;
 
 template <typename T = Ok<void>, typename E = Err<std::string>>
-class Result
+class [[nodiscard("Must check if ok")]] Result
 {
 public:
     template <typename U>
@@ -142,7 +166,7 @@ private:
 };
 
 template <typename E>
-class Result<Ok<void>, E>
+class [[nodiscard("Must check if ok")]] Result<Ok<void>, E>
 {
 public:
     Result() : m_ok(true) {}
@@ -158,6 +182,7 @@ public:
     bool     ok() const { return m_ok; }
     E&       error() { return m_err; }
     const E& error() const { return m_err; }
+             operator bool() const { return ok(); }
 
     template <typename U = E, typename = typename U::value_type>
     typename U::value_type& error_v()
@@ -258,6 +283,9 @@ static inline const std::string version_infos = fmt::format(
     "oshot v{} built from branch '{}' at {} commit '{}' ({}).\n"
     "Date: {}\n"
     "Tag: {}\n",
+#ifdef DISABLE_PLUGINS
+    "NO PLUGINS SUPPORT\n",
+#endif
     VERSION,
     GIT_BRANCH,
     GIT_DIRTY,
@@ -270,6 +298,7 @@ std::vector<uint8_t> encode_to_png(const capture_result_t& cap);
 
 std::string replace_str(std::string& str, const std::string_view from, const std::string_view to);
 std::string select_image();
+std::string expand_var(std::string ret);
 std::string col_to_hexstr(const rgba_t& col);
 
 bool acquire_tray_lock();
@@ -292,10 +321,22 @@ Result<capture_result_t> load_image_rgba(const std::string& path);
 Result<std::string>      get_config_image_out_fmt();
 Result<>                 save_png(SavingOp op, const capture_result_t& img);
 
-void minimize_window();               // Defined on main_tool_*
-void maximize_window();               // Defined on main_tool_*
-void extern_glfwTerminate();          // Defined on main_tool_*
-void extern_glfwSwapInterval(int v);  // Defined on main_tool_*
+// Defined on main_tool_*
+namespace
+{
+void (*g_minimize_fn)()         = nullptr;
+void (*g_maximize_fn)()         = nullptr;
+void (*g_terminate_fn)()        = nullptr;
+void (*g_swap_interval_fn)(int) = nullptr;
+}  // namespace
+void register_window_callbacks(void (*minimize_fn)(),
+                               void (*maximize_fn)(),
+                               void (*terminate_fn)(),
+                               void (*swap_interval_fn)(int));
+void minimize_window();
+void maximize_window();
+void extern_glfwTerminate();
+void extern_glfwSwapInterval(int v);
 void fit_to_screen(capture_result_t& img);
 void rgba_to_grayscale(const uint8_t* rgba, uint8_t* result, int width, int height);
 void build_font_atlas(ImGuiIO& io);
@@ -307,6 +348,9 @@ bool parse_hex_rgba(const std::string_view hex, rgba_t& out);
 
 static void create_dialog(const char* title, const NvdDialogType type, const std::string& str) noexcept
 {
+    if (nvd_get_error() == NVD_NOT_INITIALIZED)
+        return;
+
     NvdDialogBox* dialog = nvd_dialog_box_new(title, str.c_str(), type);
     nvd_show_dialog(dialog);
     nvd_free_object(dialog);
@@ -356,13 +400,44 @@ inline void info(const std::string_view fmt, Args&&... args) noexcept
  * @returns the result, y = true, n = false, only returns def if the result is def
  */
 template <typename... Args>
-inline bool ask_user_yn(bool, const std::string_view fmt, Args&&... args)
+inline bool ask_user_yn(bool def, const std::string_view fmt, Args&&... args)
 {
-    const std::string& str      = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...);
-    NvdQuestionBox*    question = nvd_dialog_question_new("Confirmation", str.c_str(), NVD_YES_NO);
-    if (!question)
-        die("Couldn't create question dialog box");
-    return nvd_get_reply(question) == NVD_REPLY_OK;
+    const std::string& str = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...);
+    if (nvd_get_error() == NVD_NOT_INITIALIZED)
+    {
+#ifdef _WIN32
+        int result = MessageBox(NULL, str.c_str(), "Confirmation", MB_YESNO | MB_ICONQUESTION);
+        return (result == IDYES);
+#else
+        const std::string_view inputs_str = def ? "[Y/n]" : "[y/N]";
+        std::string            result;
+        fmt::print("{} {}: ", str, inputs_str);
+
+        while (std::getline(std::cin, result) && (result.length() > 1))
+        {
+            fmt::print(BOLD_COLOR(fmt::rgb(fmt::color::yellow)), "Please answear y or n\n");
+            fmt::print("{} {}: ", str, inputs_str);
+        }
+
+        if (std::cin.eof())
+            die("Exiting due to CTRL-D or EOF");
+
+        if (result.empty())
+            return def;
+
+        if (def ? std::tolower(result[0]) != 'n' : std::tolower(result[0]) != 'y')
+            return def;
+
+        return !def;
+#endif
+    }
+    else
+    {
+        NvdQuestionBox* question = nvd_dialog_question_new("Confirmation", str.c_str(), NVD_YES_NO);
+        if (!question)
+            die("Couldn't create question dialog box");
+        return nvd_get_reply(question) == NVD_REPLY_OK;
+    }
 }
 
 // RAII guard: ensures glfwTerminate() runs even on crash/signal.
@@ -373,12 +448,13 @@ inline struct GlfwGuard
     ~GlfwGuard() { extern_glfwTerminate(); }
 } glfw_guard;
 
-class CdGuard
+struct CdGuard
 {
-public:
     fs::path saved;
     CdGuard(const fs::path& p) : saved(fs::current_path())
     {
+        if (!fs::exists(p))
+            die("CdGuard: Path {} doesn't exist", p.string());
         if (!p.empty())
             fs::current_path(p);
     }

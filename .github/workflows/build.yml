@@ -180,7 +180,6 @@ jobs:
           mkdir -p build
           cmake -S . -B build -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
           cd build && make
-          strip --strip-unneeded ./oshot
 
       - name: Build deb package (Linux)
         if: matrix.artifact-name == 'debian-package'
@@ -211,17 +210,16 @@ jobs:
           mkdir -p build
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DWINDOWS_CMD=OFF
           ninja -C build
-          cd build && strip --strip-unneeded ./oshot.exe
 
       # Package
       - name: Package Linux binary
         if: matrix.artifact-name == 'linux'
         run: |
-          mkdir -p package/oshot/
-          cp ./build/oshot package/oshot/
-          printf '#!/bin/bash\ncp oshot /usr/local/bin/oshot\n' > package/oshot/install.sh
-          chmod +x package/oshot/install.sh package/oshot/oshot
-          cd package && zip -r oshot-linux.zip oshot/
+          cmake --install build --prefix package/oshot
+          find package/oshot -type f \( -executable -o -name '*.so*' \) -exec strip --strip-unneeded {} + 2>/dev/null || true
+          printf '#!/bin/bash\ncp -r bin/* /usr/local/bin/\nmkdir -p /usr/local/lib\ncp -r lib/* /usr/local/lib/\n' > package/oshot/install.sh
+          chmod +x package/oshot/install.sh
+          cd package && zip -ry oshot-linux.zip oshot/
 
       - name: Package Linux AppImage
         if: matrix.artifact-name == 'linux-appimage'
@@ -230,7 +228,9 @@ jobs:
           ./scripts/create_appimage.sh ./build/oshot oshot-x86_64.AppImage
           chmod +x oshot-x86_64.AppImage
           mv oshot-x86_64.AppImage package/oshot/
-          cd package && zip -r oshot-appimage.zip oshot/
+          cmake --install build --prefix package/oshot/oshotpm
+          rm -f package/oshot/oshotpm/bin/oshot
+          cd package && zip -ry oshot-appimage.zip oshot/
 
       - name: Package macOS bundle
         if: runner.os == 'macOS'
@@ -239,18 +239,23 @@ jobs:
           ARCH=$(uname -m)
           ./scripts/create_app_bundle.sh ./build/oshot oshot-macos-${ARCH}.dmg
           mv oshot-macos-${ARCH}.dmg package/oshot/
+          cmake --install build --prefix package/oshot/oshotpm
+          rm -f package/oshot/oshotpm/bin/oshot
           curl -L $MODELS_URL_RAW/eng.traineddata -o package/oshot/models/eng.traineddata
-          cd package && zip -r oshot-macos-${ARCH}.zip oshot/
+          cd package && zip -ry oshot-macos-${ARCH}.zip oshot/
 
       - name: Package Windows binary
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
           mkdir -p package/oshot/models
-          cp ./build/oshot.exe ./oshot.ico package/oshot/
+          cmake --install build --prefix package/oshot_install
+          strip --strip-unneeded package/oshot_install/bin/*.exe package/oshot_install/bin/*.dll
+          cp package/oshot_install/bin/*.exe package/oshot_install/bin/*.dll package/oshot/ 2>/dev/null || true
+          cp ./oshot.ico package/oshot/
           ldd ./build/oshot.exe | grep -i mingw | awk '{print $3}' | xargs -I {} cp {} package/oshot/ || true
           curl -L $MODELS_URL_RAW/eng.traineddata -o package/oshot/models/eng.traineddata
-          cd package && zip -r oshot-windows.zip oshot/
+          cd package && zip -ry oshot-windows.zip oshot/
 
       # Upload artifact
       - name: Upload build artifact

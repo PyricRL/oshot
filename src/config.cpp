@@ -1,13 +1,12 @@
 #include "config.hpp"
 
-#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
 
 #include "fmt/base.h"
 #include "fmt/os.h"
-#include "toml++/toml.hpp"
+#include "texts.hpp"
 #include "util.hpp"
 
 Config::Config(const fs::path& configFile, const fs::path& configDir)
@@ -15,34 +14,22 @@ Config::Config(const fs::path& configFile, const fs::path& configDir)
 {
     if (!fs::exists(configDir))
     {
-        warn("Oshot config folder was not found, creating folders at {}!", configDir.string());
+        spdlog::warn("Oshot config folder was not found, creating folders at {}!", configDir.string());
         fs::create_directories(configDir);
         fs::create_directories(configDir / "models");
+        fs::create_directories(configDir / "plugins");
     }
 
     if (!fs::exists(configFile))
     {
-        warn("Config file {} not found, generating new one", configFile.string());
+        spdlog::warn("Config file {} not found, generating new one", configFile.string());
         GenerateConfig(configFile.string());
     }
 }
 
 void Config::LoadConfigFile(const std::string& filename)
 {
-    try
-    {
-        m_tbl = toml::parse_file(filename);
-    }
-    catch (const toml::parse_error& err)
-    {
-        die("Parsing config file '{}' failed:\n"
-            "{}\n"
-            "\t(error occurred at line {} column {})",
-            filename,
-            err.description(),
-            err.source().begin.line,
-            err.source().begin.column);
-    }
+    MUST_OK(LoadFile(filename), die("{}", _r.error_v()));
 
     File.ocr_path         = GetValue<std::string>("default.ocr-path", File.ocr_path);
     File.ocr_get_repo     = GetValue<std::string>("default.ocr-repo-downlaod", "tesseract-ocr/tessdata");
@@ -63,15 +50,14 @@ void Config::LoadConfigFile(const std::string& filename)
     File.allow_out_edit = GetValue<bool>("default.allow-edit-ocr", false);  // deprecated
     File.allow_out_edit = GetValue<bool>("default.allow-text-edit", File.allow_out_edit);
 
-    const char* tessdata_prefix;
-    if (!File.pref_conf_to_env && (tessdata_prefix = getenv("TESSDATA_PREFIX")))
-        File.ocr_path = tessdata_prefix;
+    const char* t;
+    if (!File.pref_conf_to_env && (t = getenv("TESSDATA_PREFIX")))
+        File.ocr_path = t;
 }
 
 void Config::LoadThemeFile(const std::string& filename)
 {
     m_theme_path    = filename;
-    m_theme_tbl     = {};
     theme_overrides = {};
     theme_overrides.colors.clear();
 
@@ -82,24 +68,12 @@ void Config::LoadThemeFile(const std::string& filename)
 
     if (fs::exists(filename))
     {
-        try
-        {
-            m_theme_tbl = toml::parse_file(filename);
-        }
-        catch (const toml::parse_error& err)
-        {
-            die("Parsing theme file '{}' failed:\n"
-                "{}\n"
-                "\t(error occurred at line {} column {})",
-                filename,
-                err.description(),
-                err.source().begin.line,
-                err.source().begin.column);
-        }
+        MUST_OK(m_theme.LoadFile(filename), die("{}", _r.error_v()));
+        m_theme_path = filename;
     }
 
     theme_overrides_t& ov = theme_overrides;
-    if (const toml::table* colors = m_theme_tbl.at_path("theme.colors").as_table())
+    if (const toml::table* colors = m_theme.GetTbl().at_path("theme.colors").as_table())
     {
         colors->for_each(
             [&](const toml::key& k, const toml::value<std::string>& v) { ov.colors[std::string(k.str())] = v.get(); });
@@ -113,34 +87,6 @@ void Config::LoadThemeFile(const std::string& filename)
     ov.frame_border    = GetThemeStyleValue("frame-border", -1.f);
 
     ov.smooth_animations = GetThemeValue("smooth-animations", false);
-}
-
-void Config::OverrideOption(const std::string& opt)
-{
-    const size_t pos = opt.find('=');
-    if (pos == std::string::npos)
-        die("Option to override '{}' doesn't have an equal sign '=' for separating name and value\n"
-            "See --help for more information",
-            opt);
-
-    std::string        name{ opt.substr(0, pos) };
-    const std::string& value = opt.substr(pos + 1);
-
-    // usually the user finds incovinient to write "default.foo"
-    // for general config options
-    if (name.find('.') == name.npos)
-        name.insert(0, "default.");
-
-    if (value == "true")
-        m_overrides[name] = { .value_type = ValueType::kBool, .bool_value = true };
-    else if (value == "false")
-        m_overrides[name] = { .value_type = ValueType::kBool, .bool_value = false };
-    else if ((value[0] == '"' && value.back() == '"') || (value[0] == '\'' && value.back() == '\''))
-        m_overrides[name] = { .value_type = ValueType::kString, .string_value = value.substr(1, value.size() - 2) };
-    else if (std::ranges::all_of(value, ::isdigit))
-        m_overrides[name] = { .value_type = ValueType::kInt, .int_value = std::stoi(value) };
-    else
-        die("looks like override value '{}' from '{}' is neither a bool, int or string value", value, name);
 }
 
 void Config::GenerateConfig(const std::string& filename, const bool force)
@@ -165,6 +111,8 @@ void Config::GenerateConfig(const std::string& filename, const bool force)
             File.ocr_model,
             File.ocr_get_repo,
             File.delay,
+            File.color_picker,
+            File.cpa_mode,
             File.real_full_screen,
             File.enable_vsync,
             File.allow_out_edit,

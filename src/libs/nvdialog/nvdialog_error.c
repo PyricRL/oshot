@@ -37,7 +37,7 @@
 
 NVD_THREAD_LOCAL(NvdError ___error) = NVD_NO_ERROR;
 
-NVD_INTERNAL_FUNCTION void nvd_set_error(NvdError error) {
+void nvd_set_error(NvdError error) {
         ___error = error;
 }
 

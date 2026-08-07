@@ -1,12 +1,15 @@
 #!/usr/bin/make -f
 
+DISABLE_PLUGINS ?= 1
+
 %:
 	dh $@
 
 override_dh_auto_configure:
 	dh_auto_configure --buildsystem=cmake -- \
 		-DCMAKE_BUILD_TYPE=Release \
-		-DCMAKE_INSTALL_PREFIX=/usr
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DDISABLE_PLUGINS=$(DISABLE_PLUGINS)
 
 override_dh_auto_build:
 	dh_auto_build --buildsystem=cmake

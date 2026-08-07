@@ -703,6 +703,14 @@ else()
             oshotpm
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+    install(
+        FILES
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/oshot_plugin.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/libs/cimgui/cimgui.h"
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}
     )
 endif()
 

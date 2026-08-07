@@ -44,32 +44,89 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux package
           - os: ubuntu-latest
             container:
               image: ghcr.io/toni500github/arch-dev:latest
               options: --user 0
+            target: linux
+            plugins: false
             artifact-name: linux
             package-file: package/oshot-linux.zip
 
+          - os: ubuntu-latest
+            container:
+              image: ghcr.io/toni500github/arch-dev:latest
+              options: --user 0
+            target: linux
+            plugins: true
+            artifact-name: linux-plugins
+            package-file: package/oshot-linux-plugins.zip
+
+          # AppImage package
           - os: ubuntu-22.04
+            target: linux-appimage
+            plugins: false
             artifact-name: linux-appimage
             package-file: package/oshot-appimage.zip
 
           - os: ubuntu-22.04
+            target: linux-appimage
+            plugins: true
+            artifact-name: linux-appimage-plugins
+            package-file: package/oshot-appimage-plugins.zip
+
+          # Debian package
+          - os: ubuntu-22.04
+            target: debian-package
+            plugins: false
             artifact-name: debian-package
             package-file: package/oshot-debian-package.deb
 
+          - os: ubuntu-22.04
+            target: debian-package
+            plugins: true
+            artifact-name: debian-package-plugins
+            package-file: package/oshot-debian-package-plugins.deb
+
+          # macOS aarch64 (arm64) package
           - os: macos-latest
+            target: macos-arm64
+            plugins: false
             artifact-name: macos-arm64
             package-file: package/oshot-macos-arm64.zip
 
+          - os: macos-latest
+            target: macos-arm64
+            plugins: true
+            artifact-name: macos-arm64-plugins
+            package-file: package/oshot-macos-arm64-plugins.zip
+
+          # macOS x86_64 (Intel) package
           - os: macos-15-intel
+            target: macos-x86_64
+            plugins: false
             artifact-name: macos-x86_64
             package-file: package/oshot-macos-x86_64.zip
 
+          - os: macos-15-intel
+            target: macos-x86_64
+            plugins: true
+            artifact-name: macos-x86_64-plugins
+            package-file: package/oshot-macos-x86_64-plugins.zip
+
+          # Windows package
           - os: windows-latest
+            target: windows
+            plugins: false
             artifact-name: windows
             package-file: package/oshot-windows.zip
+
+          - os: windows-latest
+            target: windows
+            plugins: true
+            artifact-name: windows-plugins
+            package-file: package/oshot-windows-plugins.zip
 
     steps:
       - name: Checkout repository
@@ -82,7 +139,7 @@ jobs:
 
       # Dependencies
       - name: Install dependencies (Linux)
-        if: matrix.artifact-name == 'linux'
+        if: matrix.target == 'linux'
         run: |
           pacman -Syu --noconfirm --needed \
             git \
@@ -98,7 +155,7 @@ jobs:
             libappindicator-gtk3
 
       - name: Install dependencies (AppImage)
-        if: matrix.artifact-name == 'linux-appimage'
+        if: matrix.target == 'linux-appimage'
         run: |
           sudo apt-get update && sudo apt-get purge firefox -y
           sudo apt-get install -y \
@@ -123,7 +180,7 @@ jobs:
             libappindicator3-dev
 
       - name: Install dependencies (debian-package)
-        if: matrix.artifact-name == 'debian-package'
+        if: matrix.target == 'debian-package'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -174,20 +231,23 @@ jobs:
 
       # Build
       - name: Build project (Linux)
-        if: matrix.artifact-name == 'linux' || matrix.artifact-name == 'linux-appimage'
+        if: matrix.target == 'linux' || matrix.target == 'linux-appimage'
         run: |
           ./scripts/generateVersion.sh
           mkdir -p build
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
-          cd build && make
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DDISABLE_PLUGINS=${{ matrix.plugins && '0' || '1' }}
+          cmake --build build
 
       - name: Build deb package (Linux)
-        if: matrix.artifact-name == 'debian-package'
+        if: matrix.target == 'debian-package'
+        env:
+          DISABLE_PLUGINS: ${{ matrix.plugins && '0' || '1' }}
         run: |
           ./scripts/generateVersion.sh
           dpkg-buildpackage -us -uc -b
           mkdir -p package
-          mv ../oshot_*.deb package/oshot-debian-package.deb
+          SUFFIX=$([ "${{ matrix.plugins }}" == "true" ] && echo "-plugins" || echo "")
+          mv ../oshot_*.deb package/oshot-debian-package${SUFFIX}.deb
 
       - name: Build project (macOS)
         if: runner.os == 'macOS'
@@ -198,7 +258,8 @@ jobs:
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
             -DCMAKE_PREFIX_PATH="$BREW" \
-            -DPKG_CONFIG_PATH="$BREW/lib/pkgconfig:$BREW/share/pkgconfig"
+            -DPKG_CONFIG_PATH="$BREW/lib/pkgconfig:$BREW/share/pkgconfig" \
+            -DDISABLE_PLUGINS=${{ matrix.plugins && '0' || '1' }}
           cd build && make
           strip -x ./oshot
 
@@ -208,21 +269,22 @@ jobs:
         run: |
           ./scripts/generateVersion.sh
           mkdir -p build
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DWINDOWS_CMD=OFF
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DWINDOWS_CMD=OFF -DDISABLE_PLUGINS=${{ matrix.plugins && '0' || '1' }}
           ninja -C build
 
       # Package
       - name: Package Linux binary
-        if: matrix.artifact-name == 'linux'
+        if: matrix.target == 'linux'
         run: |
           cmake --install build --prefix package/oshot
           find package/oshot -type f \( -executable -o -name '*.so*' \) -exec strip --strip-unneeded {} + 2>/dev/null || true
           printf '#!/bin/bash\ncp -r bin/* /usr/local/bin/\nmkdir -p /usr/local/lib\ncp -r lib/* /usr/local/lib/\n' > package/oshot/install.sh
           chmod +x package/oshot/install.sh
-          cd package && zip -ry oshot-linux.zip oshot/
+          SUFFIX=$([ "${{ matrix.plugins }}" == "true" ] && echo "-plugins" || echo "")
+          cd package && zip -ry oshot-linux${SUFFIX}.zip oshot/
 
       - name: Package Linux AppImage
-        if: matrix.artifact-name == 'linux-appimage'
+        if: matrix.target == 'linux-appimage'
         run: |
           mkdir -p package/oshot/
           ./scripts/create_appimage.sh ./build/oshot oshot-x86_64.AppImage
@@ -230,32 +292,35 @@ jobs:
           mv oshot-x86_64.AppImage package/oshot/
           cmake --install build --prefix package/oshot/oshotpm
           rm -f package/oshot/oshotpm/bin/oshot
-          cd package && zip -ry oshot-appimage.zip oshot/
+          SUFFIX=$([ "${{ matrix.plugins }}" == "true" ] && echo "-plugins" || echo "")
+          cd package && zip -ry oshot-appimage${SUFFIX}.zip oshot/
 
       - name: Package macOS bundle
         if: runner.os == 'macOS'
         run: |
           mkdir -p package/oshot/models
           ARCH=$(uname -m)
+          SUFFIX=$([ "${{ matrix.plugins }}" == "true" ] && echo "-plugins" || echo "")
           ./scripts/create_app_bundle.sh ./build/oshot oshot-macos-${ARCH}.dmg
           mv oshot-macos-${ARCH}.dmg package/oshot/
           cmake --install build --prefix package/oshot/oshotpm
           rm -f package/oshot/oshotpm/bin/oshot
           curl -L $MODELS_URL_RAW/eng.traineddata -o package/oshot/models/eng.traineddata
-          cd package && zip -ry oshot-macos-${ARCH}.zip oshot/
+          cd package && zip -ry oshot-macos-${ARCH}${SUFFIX}.zip oshot/
 
       - name: Package Windows binary
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
           mkdir -p package/oshot/models
+          SUFFIX=$([ "${{ matrix.plugins }}" == "true" ] && echo "-plugins" || echo "")
           cmake --install build --prefix package/oshot_install
           strip --strip-unneeded package/oshot_install/bin/*.exe package/oshot_install/bin/*.dll
           cp package/oshot_install/bin/*.exe package/oshot_install/bin/*.dll package/oshot/ 2>/dev/null || true
           cp ./oshot.ico package/oshot/
           ldd ./build/oshot.exe | grep -i mingw | awk '{print $3}' | xargs -I {} cp {} package/oshot/ || true
           curl -L $MODELS_URL_RAW/eng.traineddata -o package/oshot/models/eng.traineddata
-          cd package && zip -ry oshot-windows.zip oshot/
+          cd package && zip -ry oshot-windows${SUFFIX}.zip oshot/
 
       # Upload artifact
       - name: Upload build artifact

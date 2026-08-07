@@ -312,6 +312,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
+          shopt -s nullglob
           mkdir -p package/oshot/models
           SUFFIX=$([ "${{ matrix.plugins }}" == "true" ] && echo "-plugins" || echo "")
           cmake --install build --prefix package/oshot_install

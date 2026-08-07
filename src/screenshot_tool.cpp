@@ -395,6 +395,7 @@ Result<> ScreenshotTool::StartWindow()
     m_tool_textures[idx(ToolType::Logo)] = CreateTexture(nullptr, OSHOT_LOGO_RGBA, OSHOT_LOGO_W, OSHOT_LOGO_H).get();
 #endif
 
+#ifndef DISABLE_PLUGINS
     // Placeholders for not crashing when used but not needed
     PluginCallbacks cb;
     cb.on_status  = [](const std::string_view) {};
@@ -404,6 +405,7 @@ Result<> ScreenshotTool::StartWindow()
     cb.on_info    = [](const std::string_view) {};
     cb.confirm    = [](const std::string_view, bool) -> bool { return false; };
     m_plugin_manager.SetCallbacks(cb);
+#endif
 
     if (!fs::exists(m_inputs.ocr_model_downloaded_path))
         SetError(m_download_errors, OcrDownloadError::InvalidPath, "No such directory or path");

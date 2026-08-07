@@ -478,6 +478,7 @@ void ScreenshotTool::RenderOverlay()
         DrawDownloadOCRWindow();
         DrawLogsWindow();
         DrawOcrTools();
+        DrawAboutWindow();
         DrawBarDecodeTools();
 #ifndef DISABLE_PLUGINS
         DrawManagePluginsWindow();
@@ -1315,16 +1316,20 @@ void ScreenshotTool::DrawMenuItems()
 
         ImGui::EndMenuBar();
     }
+}
 
+void ScreenshotTool::DrawAboutWindow()
+{
     bool open = m_show_window.Has(SubWindow::About);
-    if (open)
-    {
-        ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
-        ImGui::Begin("About", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
-        float            window_width = ImGui::GetWindowSize().x;
-        std::string_view text_display;
+    if (!open)
+        return;
 
-        auto centered_text = [&](const std::string_view text) {
+    ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("About", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings))
+    {
+        std::string_view text_display;
+        const float      window_width  = ImGui::GetWindowSize().x;
+        auto             centered_text = [&](const std::string_view text) {
             float name_width = ImGui::CalcTextSize(text.data()).x;
             ImGui::SetCursorPosX((window_width - name_width) / 2);
             return text;

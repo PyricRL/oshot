@@ -453,6 +453,7 @@ private:
 
     void DrawOcrTools();
     void DrawBarDecodeTools();
+    void DrawAboutWindow();
     void DrawAnnotationToolbar();
     void DrawPreferencesWindow();
     void DrawDownloadOCRWindow();

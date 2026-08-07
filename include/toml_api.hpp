@@ -14,9 +14,9 @@
 enum class ValueType
 {
     kNone,
-    kString,
-    kBool,
-    kInt
+    String,
+    Bool,
+    Int
 };
 
 struct override_config_value_t
@@ -154,13 +154,13 @@ public:
             name.insert(0, "default.");
 
         if (value == "true")
-            m_overrides[name] = { .value_type = ValueType::kBool, .bool_value = true };
+            m_overrides[name] = { .value_type = ValueType::Bool, .bool_value = true };
         else if (value == "false")
-            m_overrides[name] = { .value_type = ValueType::kBool, .bool_value = false };
+            m_overrides[name] = { .value_type = ValueType::Bool, .bool_value = false };
         else if ((value[0] == '"' && value.back() == '"') || (value[0] == '\'' && value.back() == '\''))
-            m_overrides[name] = { .value_type = ValueType::kString, .string_value = value.substr(1, value.size() - 2) };
+            m_overrides[name] = { .value_type = ValueType::String, .string_value = value.substr(1, value.size() - 2) };
         else if (std::ranges::all_of(value, ::isdigit))
-            m_overrides[name] = { .value_type = ValueType::kInt, .int_value = std::stoi(value) };
+            m_overrides[name] = { .value_type = ValueType::Int, .int_value = std::stoi(value) };
         else
             die("looks like override value '{}' from '{}' is neither a bool, int or string value", value, name);
     }
@@ -178,17 +178,17 @@ public:
         override_config_value_t o;
         if constexpr (std::is_same_v<T, bool>)
         {
-            o.value_type = ValueType::kBool;
+            o.value_type = ValueType::Bool;
             o.bool_value = value;
         }
         else if constexpr (std::is_convertible_v<T, std::string>)
         {
-            o.value_type   = ValueType::kString;
+            o.value_type   = ValueType::String;
             o.string_value = value;
         }
         else if constexpr (std::is_convertible_v<T, int>)
         {
-            o.value_type = ValueType::kInt;
+            o.value_type = ValueType::Int;
             o.int_value  = value;
         }
 
@@ -301,13 +301,13 @@ private:
         {
             const auto& ov = overridePos->second;
             if constexpr (std::is_same<T, bool>())
-                if (ov.value_type == ValueType::kBool)
+                if (ov.value_type == ValueType::Bool)
                     return ov.bool_value;
             if constexpr (std::is_same<T, std::string>())
-                if (ov.value_type == ValueType::kString)
+                if (ov.value_type == ValueType::String)
                     return ov.string_value;
             if constexpr (std::is_same<T, int>())
-                if (ov.value_type == ValueType::kInt)
+                if (ov.value_type == ValueType::Int)
                     return ov.int_value;
         }
 

@@ -34,24 +34,24 @@ Manage plugins for oshot.
 
 Terms:
     REPO:
-        - With install: a Git repository, either URL or local path, both containing plugins and a 'oshotpm.toml' manifest.
+        - With install: a Git repository, either URL or local path, both containing plugins and a 'oshot-plugin.toml' manifest.
         - With enable OR disable: the name of a repository already installed (as listed with 'oshotpm list').
 
 Examples:
     Install a plugin repository from GitHub:
         oshotpm install https://github.com/Toni500github/oshot-test-plugins
     Disable a plugin from an installed repository:
-        oshotpm disable customfetch-plugins-github/github-user-fetch
+        oshotpm disable toni-test/plugins
     Uninstall an entire plugin repository:
-        oshotpm uninstall customfetch-plugins-github
+        oshotpm uninstall tonis-plugins
 
 Commands:
-    help <COMMAND>                     Show help for a specific command.
+    help <COMMAND>                     Show help for a specific command. As right now just 'install' and 'list'
     install [OPTIONS] <REPO(s)>...     Install one or more plugin repository from a Git repo or local path.
     uninstall <REPO(s)>...             Uninstall one or more installed plugin repository.
     enable <REPO/PLUGIN>...            Enable one or more plugins from an installed repository.
     disable <REPO/PLUGIN>...           Disable one or more plugins from an installed repository.
-    list                               Show all plugins installed via state.toml.
+    list [-v]                          Show all plugins installed via state.toml.
     update                             Update and upgrade all repositories
     gen-manifest                       Generate a template 'oshotpm.toml' file.
 
@@ -85,7 +85,7 @@ Options:
 // oshot
 
 inline constexpr std::string_view oshot_help = (R"(Usage: oshot [OPTIONS]...
-Lightweight Screenshot tool to extract text on the fly.
+Lightweight Screenshot tool to extract text (and more) on the fly.
 
 GENERAL OPTIONS:
     -h, --help                  Print this help menu.
@@ -319,7 +319,7 @@ platforms = ["all"]
 output-dir = "build/plugin-dir/"
 
 # A list of commands to be executed for building the plugin.
-# All commands are executed in a single shared shell session,
+# All commands are executed in a single shared shell session, in a concatened && sequences,
 # so environment variables, `cd`, and other shell state persist across steps.
 # Commands are executed in order and stop at the first failure.
 build-steps = [

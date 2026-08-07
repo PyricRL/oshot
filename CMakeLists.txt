@@ -63,7 +63,7 @@ endmacro()
 
 # Options
 add_option(WINDOWS_CMD "Enable terminal support on Windows" OFF ON)
-add_option(DISABLE_PLUGINS "Disable plugins support" OFF ON)
+add_option(DISABLE_PLUGINS "Disable plugins support" ON ON)
 
 # When plugins are enabled, oshot_common becomes a SHARED library (see
 # below) instead of an OBJECT library, so anything that needs to find it at

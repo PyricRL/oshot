@@ -11,8 +11,8 @@ PREFIX      ?= /usr
 JOBS        := $(shell echo $(MAKEFLAGS) | grep -oP '(?<=-j)\d+' || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 NAME       := oshot
-VERSION    := 0.4.6
-OLDVERSION := 0.4.5
+VERSION    := 0.5.0-rc1
+OLDVERSION := 0.4.6
 TARGET     ?= $(NAME)
 
 DEBUG           ?= 0

@@ -23,7 +23,18 @@ if(NOT MSVC AND NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "-O")
 endif()
 
 # LTO helper
+# Disabled entirely on Windows/mingw: mixing LTO and non-LTO objects in the
+# same link (which happens as soon as any one target opts out, e.g.
+# oshot_common needing -Wl,--export-all-symbols to coexist with LTO, or
+# being an OBJECT library merged straight into oshot.exe) hits GCC/mingw
+# bugs folding weak COMDAT symbols (thread_local statics in spdlog,
+# template instantiations in general). Simplest reliable fix is no LTO on
+# this platform at all, rather than chasing which target needs to be
+# excluded next.
 function(enable_lto target)
+    if(WIN32)
+        return()
+    endif()
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         target_compile_options(
             ${target}
@@ -189,7 +200,8 @@ endif()
 set_target_properties(
     ${PROJECT_NAME}
     PROPERTIES
-        BUILD_RPATH "${_rpath_origin}/../lib;$<TARGET_FILE_DIR:imgui>${OSHOT_COMMON_RPATH_ENTRY}"
+        BUILD_RPATH
+            "${_rpath_origin}/../lib;$<TARGET_FILE_DIR:imgui>${OSHOT_COMMON_RPATH_ENTRY}"
         INSTALL_RPATH "${_rpath_origin}/../lib"
 )
 
@@ -235,7 +247,8 @@ set(OSHOT_COMMON_SOURCES
 # nothing left to justify oshot_plugin/liboshotpm as separate targets, so
 # they're gone; oshot and oshotpm now link oshot_common directly.
 if(NOT DISABLE_PLUGINS)
-    list(APPEND OSHOT_COMMON_SOURCES
+    list(
+        APPEND OSHOT_COMMON_SOURCES
         src/plugins.cpp
         src/plugins/oshot_plugins.cpp
         oshotpm/src/manifest.cpp
@@ -244,11 +257,7 @@ if(NOT DISABLE_PLUGINS)
     )
 endif()
 
-add_library(
-    oshot_common
-    ${OSHOT_COMMON_LIB_TYPE}
-    ${OSHOT_COMMON_SOURCES}
-)
+add_library(oshot_common ${OSHOT_COMMON_LIB_TYPE} ${OSHOT_COMMON_SOURCES})
 
 if(OSHOT_OPTION_DEFINITIONS)
     target_compile_definitions(oshot_common PUBLIC ${OSHOT_OPTION_DEFINITIONS})
@@ -366,7 +375,8 @@ if(NOT DISABLE_PLUGINS)
     set_target_properties(
         oshotpm
         PROPERTIES
-            BUILD_RPATH "${_rpath_origin}/../lib;$<TARGET_FILE_DIR:imgui>${OSHOT_COMMON_RPATH_ENTRY}"
+            BUILD_RPATH
+                "${_rpath_origin}/../lib;$<TARGET_FILE_DIR:imgui>${OSHOT_COMMON_RPATH_ENTRY}"
             INSTALL_RPATH "${_rpath_origin}/../lib"
     )
     target_link_libraries(oshotpm PRIVATE oshot_common)
@@ -695,12 +705,7 @@ if(DISABLE_PLUGINS)
     install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 else()
     install(
-        TARGETS
-            ${PROJECT_NAME}
-            imgui
-            cimgui
-            oshot_common
-            oshotpm
+        TARGETS ${PROJECT_NAME} imgui cimgui oshot_common oshotpm
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

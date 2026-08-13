@@ -43,6 +43,7 @@
 #include "fmt/chrono.h"
 #include "fmt/format.h"
 #include "nvdialog/nvdialog_notification.h"
+#include "platform.hpp"
 #include "screen_capture.hpp"
 #include "screenshot_tool.hpp"
 #include "tinyfiledialogs.h"
@@ -64,8 +65,10 @@
 #include "stb_image_write.h"
 
 // clang-format off
-#ifdef _WIN32
+#if OSHOT_WINDOWS
 #  ifdef __MINGW64__
+# undef NTDDI_VERSION
+# undef _WIN32_WINNT
 #    define NTDDI_VERSION NTDDI_WINBLUE
 #    define _WIN32_WINNT  _WIN32_WINNT_WINBLUE
 #  endif
@@ -77,7 +80,7 @@
 #  pragma comment(lib, "Shcore.lib")
 #  pragma comment(lib, "ws2_32.lib")
 #else
-#  ifdef __APPLE__
+#  if OSHOT_MACOS
 #    include <CoreFoundation/CoreFoundation.h>
 #    include <CoreGraphics/CoreGraphics.h>
 #  endif
@@ -96,13 +99,22 @@
 char g_sock_path[100];
 int  g_sock = -1;
 
+// Defined and registered in src/main_tool_* source files
+namespace main_tool
+{
+void (*minimize_fn)()         = nullptr;
+void (*maximize_fn)()         = nullptr;
+void (*terminate_fn)()        = nullptr;
+void (*swap_interval_fn)(int) = nullptr;
+}  // namespace main_tool
+
 static const std::unordered_map<std::string, std::string>& get_xdg_user_dirs()
 {
     static std::unordered_map<std::string, std::string> cache;
     if (!cache.empty())
         return cache;
 
-#ifndef _WIN32
+#if !OSHOT_WINDOWS
     fs::path file = get_home_config_dir() / "user-dirs.dirs";
 
     if (!fs::exists(file))
@@ -123,7 +135,7 @@ constexpr ImVec4 rgba_t::to_imvec4() const
     return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
 }
 
-#ifdef _WIN32
+#if OSHOT_WINDOWS
 static HANDLE g_tray_mutex = nullptr;
 
 bool acquire_tray_lock()
@@ -277,7 +289,7 @@ Result<capture_result_t> load_image_rgba(const std::string& path)
     }
     else
     {
-#ifdef _WIN32
+#if OSHOT_WINDOWS
         _setmode(_fileno(stdin), _O_BINARY);
 #endif
 
@@ -443,7 +455,7 @@ bool hexstr_to_col(const std::string_view hex, uint32_t& out)
     return true;
 }
 
-#ifdef _WIN32
+#if OSHOT_WINDOWS
 static std::optional<fs::path> get_known_dir(REFKNOWNFOLDERID rfid, const char* backup_env)
 {
     PWSTR widePath = nullptr;
@@ -563,7 +575,7 @@ static bool is_hidden_directory(const fs::directory_entry& e)
 
 bool is_system_dark_mode()
 {
-#  ifdef __APPLE__
+#  if OSHOT_MACOS
     // CFPreferencesCopyAppValue returns nullptr when no preference is set (= light)
     CFStringRef style =
         (CFStringRef)CFPreferencesCopyAppValue(CFSTR("AppleInterfaceStyle"), kCFPreferencesAnyApplication);
@@ -640,31 +652,31 @@ void register_window_callbacks(void (*minimize_fn)(),
                                void (*terminate_fn)(),
                                void (*swap_interval_fn)(int))
 {
-    g_minimize_fn      = minimize_fn;
-    g_maximize_fn      = maximize_fn;
-    g_terminate_fn     = terminate_fn;
-    g_swap_interval_fn = swap_interval_fn;
+    main_tool::minimize_fn      = minimize_fn;
+    main_tool::maximize_fn      = maximize_fn;
+    main_tool::terminate_fn     = terminate_fn;
+    main_tool::swap_interval_fn = swap_interval_fn;
 }
 
 void minimize_window()
 {
-    if (g_minimize_fn)
-        g_minimize_fn();
+    if (main_tool::minimize_fn)
+        main_tool::minimize_fn();
 }
 void maximize_window()
 {
-    if (g_maximize_fn)
-        g_maximize_fn();
+    if (main_tool::maximize_fn)
+        main_tool::maximize_fn();
 }
 void extern_glfwTerminate()
 {
-    if (g_terminate_fn)
-        g_terminate_fn();
+    if (main_tool::terminate_fn)
+        main_tool::terminate_fn();
 }
 void extern_glfwSwapInterval(int v)
 {
-    if (g_swap_interval_fn)
-        g_swap_interval_fn(v);
+    if (main_tool::swap_interval_fn)
+        main_tool::swap_interval_fn(v);
 }
 
 std::string expand_var(std::string ret)
@@ -696,7 +708,7 @@ fs::path get_font_path(const std::string& font)
     if (font.empty())
         return {};
 
-#ifdef _WIN32
+#if OSHOT_WINDOWS
     static constexpr std::array<std::string_view, 2> default_search_paths = {
         "C:\\Windows\\Fonts\\",
         "C:\\Windows\\Resources\\Themes\\Fonts\\",

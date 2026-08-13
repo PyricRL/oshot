@@ -44,7 +44,7 @@
 namespace fs = std::filesystem;
 enum class SavingOp;
 
-#ifdef _WIN32
+#if OSHOT_WINDOWS
 #  define WIN32_LEAN_AND_MEAN
 #  include <combaseapi.h>
 #  include <knownfolders.h>
@@ -53,7 +53,7 @@ enum class SavingOp;
 #  include <windows.h>
 #endif
 
-#if defined(_WIN32) || defined(__APPLE__)
+#if OSHOT_WINDOWS || OSHOT_MACOS
 #  define OSHOT_TOOL_ON_MAIN_THREAD true
 #else
 #  define OSHOT_TOOL_ON_MAIN_THREAD false
@@ -331,7 +331,7 @@ bool is_system_dark_mode();
 bool hexstr_to_col(const std::string_view hex, uint32_t& out);
 bool hexstr_to_imvec4(const std::string_view hex, ImVec4& out);
 
-#ifndef _WIN32
+#if !OSHOT_WINDOWS
 fs::path get_runtime_dir();
 #endif
 fs::path get_font_path(const std::string& font);
@@ -346,27 +346,15 @@ Result<capture_result_t> load_image_rgba(const std::string& path);
 Result<std::string>      get_config_image_out_fmt();
 Result<>                 save_png(SavingOp op, const capture_result_t& img);
 
-// Defined on src/main_tool_* source files
-namespace
-{
-void (*g_minimize_fn)()         = nullptr;
-void (*g_maximize_fn)()         = nullptr;
-void (*g_terminate_fn)()        = nullptr;
-void (*g_swap_interval_fn)(int) = nullptr;
-}  // namespace
-void register_window_callbacks(void (*minimize_fn)(),
-                               void (*maximize_fn)(),
-                               void (*terminate_fn)(),
-                               void (*swap_interval_fn)(int));
 void minimize_window();
 void maximize_window();
 void extern_glfwTerminate();
 void extern_glfwSwapInterval(int v);
+
 void fit_to_screen(capture_result_t& img);
 void rgba_to_grayscale(const uint8_t* rgba, uint8_t* result, int width, int height);
 void build_font_atlas(ImGuiIO& io);
 int  get_screen_dpi();
-
 bool parse_hex_rgba(const std::string_view hex, rgba_t& out);
 
 #define BOLD_COLOR(x) (fmt::emphasis::bold | fmt::fg(x))
@@ -430,7 +418,7 @@ inline bool ask_user_yn(bool def, const std::string_view fmt, Args&&... args)
     const std::string& str = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...);
     if (nvd_get_error() == NVD_NOT_INITIALIZED)
     {
-#ifdef _WIN32
+#if OSHOT_WINDOWS
         int result = MessageBox(NULL, str.c_str(), "Confirmation", MB_YESNO | MB_ICONQUESTION);
         return (result == IDYES);
 #else

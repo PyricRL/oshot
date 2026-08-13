@@ -23,7 +23,9 @@
  *
  */
 
-#ifndef __APPLE__
+#include "platform.hpp"
+
+#if !OSHOT_MACOS
 #  include "config.hpp"
 #  include "imgui/imgui.h"
 #  include "imgui/imgui_impl_glfw.h"
@@ -37,10 +39,10 @@
 #  endif
 #  include <GLFW/glfw3.h>  // Will drag system OpenGL headers
 
-#  if defined(_WIN32)
+#  if OSHOT_WINDOWS
 #    define WIN32_LEAN_AND_MEAN
 #    include <windows.h>
-#  elif defined(__linux__)
+#  elif OSHOT_LINUX
 #    include <X11/Xlib.h>
 #  endif
 
@@ -48,6 +50,10 @@ GLFWwindow* window = nullptr;
 
 void glfw_error_callback(int i_error, const char* description);
 void glfw_drop_callback(GLFWwindow*, int count, const char** paths);
+void register_window_callbacks(void (*minimize_fn)(),
+                               void (*maximize_fn)(),
+                               void (*terminate_fn)(),
+                               void (*swap_interval_fn)(int));
 
 // Returns the GLFW monitor that currently contains the cursor.
 // Falls back to the primary monitor if the cursor position cannot be
@@ -57,7 +63,7 @@ static GLFWmonitor* get_monitor_at_cursor()
     int  cursor_x = 0, cursor_y = 0;
     bool cursor_ok = false;
 
-#  if defined(_WIN32)
+#  if OSHOT_WINDOWS
     POINT pt{};
     if (GetCursorPos(&pt))
     {
@@ -65,7 +71,7 @@ static GLFWmonitor* get_monitor_at_cursor()
         cursor_y  = int(pt.y);
         cursor_ok = true;
     }
-#  elif defined(__linux__)
+#  elif OSHOT_LINUX
     // X11 or XWayland
     Display* dpy = XOpenDisplay(nullptr);
     if (dpy)
@@ -163,7 +169,7 @@ int run_main_tool()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
     glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-#  elif defined(__APPLE__)
+#  elif OSHOT_MACOS
     // GL 3.2 + GLSL 150
     const char* glsl_version = "#version 150";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);

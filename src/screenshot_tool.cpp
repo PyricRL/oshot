@@ -388,7 +388,7 @@ Result<> ScreenshotTool::StartWindow()
     fit_to_screen(m_screenshot);
     SyncRuntimeFromConfig();
 
-#ifdef __APPLE__
+#if OSHOT_MACOS
     m_texture_id = ImTextureRef{};  // will be set by backend
 #else
     const Result<ImTextureRef>& res = CreateTexture(nullptr, m_screenshot.view(), m_screenshot.w, m_screenshot.h);
@@ -3472,7 +3472,7 @@ void ScreenshotTool::Cancel()
     m_state = ToolState::Idle;
 
     auto delete_texture = [](ImTextureRef& tex) {
-#ifdef __APPLE__
+#if OSHOT_MACOS
         tex = ImTextureRef{};
 #else
         if (tex._TexID)
@@ -3506,7 +3506,7 @@ bool ScreenshotTool::OpenImage(const std::string& path)
     m_screenshot = std::move(cap.get());
     fit_to_screen(m_screenshot);
 
-#ifdef __APPLE__
+#if OSHOT_MACOS
     // Tell backend to recreate Metal texture
     if (m_on_image_reload)
         m_on_image_reload(m_screenshot);
@@ -4028,7 +4028,7 @@ void ScreenshotTool::RefreshOcrModels()
 
 Result<ImTextureRef> ScreenshotTool::CreateTexture(void* tex, std::span<const uint8_t> data, int w, int h)
 {
-#ifdef __APPLE__
+#if OSHOT_MACOS
     // Metal backend handles textures separately
     return Ok(ImTextureRef{});
 #else

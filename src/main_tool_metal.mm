@@ -23,10 +23,11 @@
  *
  */
 
+#include "platform.hpp"
 // macOS Metal backend for oshot.
 // Compiled as Objective-C++ (.mm) so it can use Metal/Cocoa APIs freely
 // while the rest of the project stays plain C++.
-#ifdef __APPLE__
+#if OSHOT_MACOS
 
 #  import <Metal/Metal.h>
 #  import <QuartzCore/CAMetalLayer.h>
@@ -42,13 +43,17 @@
 
 #  undef fract1
 #  include "config.hpp"
-#  include "screen_capture.hpp"
-#  include "screenshot_tool.hpp"
+#  include "screen_capture.hh"
+#  include "screenshot_tool.hh"
 #  include "tool_icons.h"
 #  include "util.hpp"
 
 void glfw_error_callback(int error, const char* description);
 void glfw_drop_callback(GLFWwindow*, int count, const char** paths);
+void register_window_callbacks(void (*minimize_fn)(),
+                               void (*maximize_fn)(),
+                               void (*terminate_fn)(),
+                               void (*swap_interval_fn)(int));
 
 GLFWwindow* window = nullptr;
 
@@ -294,4 +299,4 @@ int run_main_tool()
     return EXIT_SUCCESS;
 }
 
-#endif  // __APPLE__
+#endif  // OSHOT_MACOS

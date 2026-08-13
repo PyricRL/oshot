@@ -32,7 +32,7 @@
 #include "clip/clip.h"
 #include "screen_capture.hpp"
 
-#ifdef __linux__
+#if OSHOT_LINUX
 #  include <sys/wait.h>
 #  include <unistd.h>
 #endif
@@ -41,7 +41,7 @@
 // Sets wlcopy_pid/xclip_pid, and returns an stdin pipe on success.
 Result<int> start_linux_copy(SessionType session, const std::string_view mime_type = "text/plain;charset=utf-8")
 {
-#ifdef __linux__
+#if OSHOT_LINUX
     static pid_t clip_pid = -1;
 
     // stop if already launched wlcopy

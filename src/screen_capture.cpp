@@ -65,7 +65,7 @@
 
 using namespace spdlog;
 
-#ifndef _WIN32
+#if !OSHOT_WINDOWS
 static const char* create_temp_png()
 {
     char tmppath[] = "/tmp/oshot_XXXXXX.png";
@@ -79,9 +79,9 @@ static const char* create_temp_png()
 
 SessionType get_session_type()
 {
-#ifdef _WIN32
+#if OSHOT_WINDOWS
     return SessionType::Windows;
-#elif defined(__APPLE__)
+#elif OSHOT_MACOS
     return SessionType::MacOS;
 #else
     const char* xdg     = std::getenv("XDG_CURRENT_DESKTOP");
@@ -110,7 +110,7 @@ SessionType get_session_type()
     return SessionType::Unknown;
 }
 
-#ifdef __linux__
+#if OSHOT_LINUX
 Result<capture_result_t> capture_full_screen_portal();
 
 // Query the geometry of the monitor under the cursor via Xlib + XRandR.
@@ -588,11 +588,10 @@ Result<capture_result_t> capture_full_screen_portal()
 {
     return Err();
 }
-#endif  // __linux__
+#endif  // OSHOT_LINUX
 
+#if OSHOT_MACOS
 // The OS automatically prompts for Screen Recording permission on first use.
-#ifdef __APPLE__
-
 // Returns the 1-based screencapture display index (-D flag) for the monitor that
 // currently contains the cursor, or 1 (main display) if the query fails.
 static int cursor_display_index()
@@ -673,7 +672,7 @@ Result<capture_result_t> capture_full_screen_macos()
 }
 #endif  // __APPLE__
 
-#ifdef _WIN32
+#if OSHOT_WINDOWS
 Result<capture_result_t> capture_full_screen_windows_fallback()
 {
     capture_result_t result;

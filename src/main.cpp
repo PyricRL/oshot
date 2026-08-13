@@ -40,9 +40,8 @@
 #include <utility>
 
 #include "cache.hpp"
-#include "fmt/format.h"
 
-#ifndef _WIN32
+#if !OSHOT_WINDOWS
 #  include <netdb.h>
 #  include <netinet/in.h>
 #  include <sys/socket.h>
@@ -53,6 +52,7 @@
 #include "config.hpp"
 #include "fmt/base.h"
 #include "fmt/compile.h"
+#include "fmt/format.h"
 #include "getopt_port/getopt.h"
 #include "nvdialog/nvdialog_error.h"
 #include "oshot_png.h"
@@ -220,7 +220,7 @@ void exit_handler(int)
 
     quit.store(true);
     cv.notify_all();
-#ifndef _WIN32
+#if !OSHOT_WINDOWS
     if (g_sock > 0)
         shutdown(g_sock, SHUT_RDWR);
 #endif
@@ -271,7 +271,7 @@ void capture_worker()
     }
 }
 
-#if defined(_WIN32) && !defined(WINDOWS_CMD)
+#if OSHOT_WINDOWS && !defined(WINDOWS_CMD)
 static std::string wide_to_utf8(const wchar_t* w)
 {
     if (!w)
@@ -362,7 +362,7 @@ int main(int argc, char* argv[])
     auto file = std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_path.string(), true);
 #endif
 
-#ifdef __linux__
+#if OSHOT_LINUX
     // AppRun prepends bundled libs to LD_LIBRARY_PATH so the AppImage is self-contained.
     // Child processes (zenity, grim, etc.) inherit it and resolve against the bundled
     // (older) libs instead of the host's, causing symbol version mismatches.
@@ -380,7 +380,7 @@ int main(int argc, char* argv[])
     signal(SIGTERM, exit_handler);
     signal(SIGABRT, exit_handler);
 
-#ifndef _WIN32
+#if !OSHOT_WINDOWS
     // Restore display then re-raise so the OS
     // still generates a core dump.
     signal(SIGSEGV, [](int sig) {
@@ -462,7 +462,7 @@ int main(int argc, char* argv[])
 
     std::vector<TrayMenu*> menu;
 
-#ifdef _WIN32
+#if OSHOT_WINDOWS
     TrayIcon tray = { "oshot.png", "oshot.ico", "oshot", menu };
 #else
     // Basically create the icon.png in a temp directory and use

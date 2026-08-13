@@ -27,8 +27,8 @@
 #include "clipboard.hpp"
 #include "config.hpp"
 #ifndef DISABLE_PLUGINS
-#  include "state_manager.hh"
 #  include "plugin.hpp"
+#  include "state_manager.hh"
 #endif
 #include "screenshot_tool.hpp"
 #include "util.hpp"

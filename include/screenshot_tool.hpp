@@ -48,7 +48,7 @@
 #include "util.hpp"
 
 #ifndef DISABLE_PLUGINS
-#  include "../oshotpm/include/plugin_manager.hh"
+#  include "plugin_manager.hh"
 #endif
 
 enum class ToolType : size_t

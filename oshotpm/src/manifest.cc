@@ -23,7 +23,7 @@
  *
  */
 
-#include "manifest.hpp"
+#include "manifest.hh"
 
 #include <algorithm>
 #include <cctype>
@@ -103,7 +103,7 @@ Result<> Manifest::ParseManifest()
     }
 
     const auto& deps_all  = m_toml.GetValueArrayStr("dependencies.all", {});
-    const auto& deps_plat = m_toml.GetValueArrayStr("dependencies." PLATFORM, {});
+    const auto& deps_plat = m_toml.GetValueArrayStr("dependencies." OSHOT_PLATFORM, {});
     m_repo.dependencies.insert(m_repo.dependencies.end(), deps_all.begin(), deps_all.end());
     m_repo.dependencies.insert(m_repo.dependencies.end(), deps_plat.begin(), deps_plat.end());
 

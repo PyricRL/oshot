@@ -23,10 +23,10 @@
  *
  */
 
-#ifndef _STATE_MANAGER_HPP_
-#define _STATE_MANAGER_HPP_
+#ifndef _STATE_MANAGER_HH_
+#define _STATE_MANAGER_HH_
 
-#include "manifest.hpp"
+#include "manifest.hh"
 #include "toml_api.hpp"
 #include "util.hpp"
 

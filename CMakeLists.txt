@@ -251,10 +251,10 @@ if(NOT DISABLE_PLUGINS)
     list(
         APPEND OSHOT_COMMON_SOURCES
         src/plugins.cpp
-        src/plugins/oshot_plugins.cpp
-        oshotpm/src/manifest.cpp
-        oshotpm/src/plugin_manager.cpp
-        oshotpm/src/state_manager.cpp
+        src/plugins/oshot_plugins.cc
+        oshotpm/src/manifest.cc
+        oshotpm/src/plugin_manager.cc
+        oshotpm/src/state_manager.cc
     )
 endif()
 
@@ -273,6 +273,7 @@ if(NOT DISABLE_PLUGINS)
             WINDOWS_EXPORT_ALL_SYMBOLS ON
             POSITION_INDEPENDENT_CODE ON
     )
+    target_include_directories(oshot_common PUBLIC ${CMAKE_SOURCE_DIR}/oshotpm/include)
 endif()
 
 enable_lto(oshot_common)

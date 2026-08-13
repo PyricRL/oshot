@@ -23,8 +23,8 @@
  *
  */
 
-#ifndef _PLUGIN_MANAGER_HPP_
-#define _PLUGIN_MANAGER_HPP_
+#ifndef _PLUGIN_MANAGER_HH_
+#define _PLUGIN_MANAGER_HH_
 
 #include <filesystem>
 #include <functional>
@@ -32,8 +32,8 @@
 #include <string_view>
 #include <vector>
 
-#include "manifest.hpp"
-#include "state_manager.hpp"
+#include "manifest.hh"
+#include "state_manager.hh"
 #include "util.hpp"
 
 // options

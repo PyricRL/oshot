@@ -30,9 +30,9 @@
 #include "fmt/compile.h"
 #include "fmt/os.h"
 #include "fmt/ranges.h"
-#include "manifest.hpp"
-#include "plugin_manager.hpp"
-#include "state_manager.hpp"
+#include "manifest.hh"
+#include "plugin_manager.hh"
+#include "state_manager.hh"
 #include "texts.hpp"
 #include "util.hpp"
 

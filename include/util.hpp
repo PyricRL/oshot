@@ -346,7 +346,7 @@ Result<capture_result_t> load_image_rgba(const std::string& path);
 Result<std::string>      get_config_image_out_fmt();
 Result<>                 save_png(SavingOp op, const capture_result_t& img);
 
-// Defined on main_tool_*
+// Defined on src/main_tool_* source files
 namespace
 {
 void (*g_minimize_fn)()         = nullptr;

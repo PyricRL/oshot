@@ -23,8 +23,8 @@
  *
  */
 
-#ifndef _MANIFEST_HPP_
-#define _MANIFEST_HPP_
+#ifndef _MANIFEST_HH_
+#define _MANIFEST_HH_
 
 #include <filesystem>
 #include <string>
@@ -34,12 +34,12 @@
 #include "platform.hpp"
 #include "toml_api.hpp"
 
-#if CF_LINUX
-#  define PLATFORM "linux"
-#elif CF_MACOS
-#  define PLATFORM "macos"
-#elif CF_WINDOWS
-#  define PLATFORM "windows"
+#if OSHOT_LINUX
+#  define OSHOT_PLATFORM "linux"
+#elif OSHOT_MACOS
+#  define OSHOT_PLATFORM "macos"
+#elif OSHOT_WINDOWS
+#  define OSHOT_PLATFORM "windows"
 #endif
 
 // Where a repo entry came from. Git-sourced repos live under a cache dir
@@ -144,4 +144,4 @@ private:
     bool m_is_parsed{};
 };
 
-#endif  // !_MANIFEST_HPP_;
+#endif  // !_MANIFEST_HH_;

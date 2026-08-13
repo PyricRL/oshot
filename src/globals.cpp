@@ -27,7 +27,7 @@
 #include "clipboard.hpp"
 #include "config.hpp"
 #ifndef DISABLE_PLUGINS
-#  include "../oshotpm/include/state_manager.hpp"
+#  include "state_manager.hh"
 #  include "plugin.hpp"
 #endif
 #include "screenshot_tool.hpp"

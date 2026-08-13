@@ -23,7 +23,7 @@
  *
  */
 
-#include "state_manager.hpp"
+#include "state_manager.hh"
 
 #include <filesystem>
 #include <string_view>
@@ -31,7 +31,7 @@
 
 #include "fmt/base.h"
 #include "fmt/os.h"
-#include "manifest.hpp"
+#include "manifest.hh"
 
 StateManager::StateManager()
 {

@@ -28,7 +28,7 @@
 #ifndef DISABLE_PLUGINS
 #  include <unordered_map>
 
-#  include "../oshotpm/include/manifest.hpp"
+#  include "../oshotpm/include/manifest.hh"
 #  include "../src/plugins/oshot_plugin.h"
 #  include "dylib.hpp"
 #  include "toml_api.hpp"

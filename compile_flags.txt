@@ -1,5 +1,6 @@
 -Iinclude
 -Iinclude/libs
+-Ioshotpm/include
 -Wall
 -Wextra
 -Wpedantic

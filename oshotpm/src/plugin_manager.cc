@@ -23,7 +23,7 @@
  *
  */
 
-#include "plugin_manager.hpp"
+#include "plugin_manager.hh"
 
 #include <algorithm>
 #include <optional>
@@ -62,7 +62,7 @@ bool is_platform_supported(const plugin_t& plugin)
 {
     if (plugin.platforms.empty() || plugin.platforms.at(0) == "all")
         return true;
-    return std::find(plugin.platforms.begin(), plugin.platforms.end(), PLATFORM) != plugin.platforms.end();
+    return std::find(plugin.platforms.begin(), plugin.platforms.end(), OSHOT_PLATFORM) != plugin.platforms.end();
 }
 
 bool looks_like_git_url(const std::string& source)
@@ -135,7 +135,7 @@ Result<PluginBuildResult> PluginBuilder::Build(const plugin_t&                  
     if (!is_platform_supported(plugin))
     {
         m_callbacks.on_warning(
-            fmt::format("Plugin '{}' doesn't support the platform '{}'. Skipping", plugin.name, PLATFORM));
+            fmt::format("Plugin '{}' doesn't support the platform '{}'. Skipping", plugin.name, OSHOT_PLATFORM));
         return Ok(PluginBuildResult::SkippedUnsupportedPlatform);
     }
 
@@ -581,7 +581,7 @@ Result<> PluginManager::InstallPrebuilt(const fs::path& archive, bool is_update)
         if (is_platform_supported(plugin))
             continue;
         m_callbacks.on_warning(
-            fmt::format("Plugin '{}' doesn't support the platform '{}'. Skipping", plugin.name, PLATFORM));
+            fmt::format("Plugin '{}' doesn't support the platform '{}'. Skipping", plugin.name, OSHOT_PLATFORM));
         skipped_plugins.push_back(plugin.name);
     }
 

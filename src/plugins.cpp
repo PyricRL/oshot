@@ -25,7 +25,7 @@
 
 #ifndef DISABLE_PLUGINS
 
-#  include "../oshotpm/include/manifest.hpp"
+#  include "manifest.hh"
 #  include "plugin.hpp"
 #  include "util.hpp"
 

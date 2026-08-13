@@ -39,6 +39,7 @@
 #include <thread>
 #include <utility>
 
+#include "platform.hpp"
 #include "cache.hpp"
 
 #if !OSHOT_WINDOWS

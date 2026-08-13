@@ -24,10 +24,10 @@
  */
 
 #include "platform.hpp"
+#if OSHOT_MACOS
 // macOS Metal backend for oshot.
 // Compiled as Objective-C++ (.mm) so it can use Metal/Cocoa APIs freely
 // while the rest of the project stays plain C++.
-#if OSHOT_MACOS
 
 #  import <Metal/Metal.h>
 #  import <QuartzCore/CAMetalLayer.h>
@@ -43,8 +43,8 @@
 
 #  undef fract1
 #  include "config.hpp"
-#  include "screen_capture.hh"
-#  include "screenshot_tool.hh"
+#  include "screen_capture.hpp"
+#  include "screenshot_tool.hpp"
 #  include "tool_icons.h"
 #  include "util.hpp"
 

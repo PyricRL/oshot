@@ -40,6 +40,7 @@
 #include "nvdialog/nvdialog_error.h"
 #include "spdlog/spdlog.h"
 #include "version.h"
+#include "platform.hpp"
 
 namespace fs = std::filesystem;
 enum class SavingOp;

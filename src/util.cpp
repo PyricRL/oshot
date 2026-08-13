@@ -67,8 +67,8 @@
 // clang-format off
 #if OSHOT_WINDOWS
 #  ifdef __MINGW64__
-# undef NTDDI_VERSION
-# undef _WIN32_WINNT
+#    undef NTDDI_VERSION
+#    undef _WIN32_WINNT
 #    define NTDDI_VERSION NTDDI_WINBLUE
 #    define _WIN32_WINNT  _WIN32_WINNT_WINBLUE
 #  endif

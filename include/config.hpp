@@ -69,7 +69,8 @@ public:
         bool        pref_conf_to_env = false;
         bool        ctrl_c_copy_img  = true;
 
-        std::vector<std::string> fonts;
+        std::pair<std::string, ImageExt> image_out_type;
+        std::vector<std::string>         fonts;
 
         bool operator==(const config_file_t&) const = default;
     } File;

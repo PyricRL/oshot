@@ -48,14 +48,6 @@
 #include "screenshot_tool.hpp"
 #include "tinyfiledialogs.h"
 
-#define SVPNG_LINKAGE inline
-#define SVPNG_OUTPUT  std::vector<uint8_t>* output
-#define SVPNG_PUT(u)  output->push_back(uint8_t(u))
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
-#include "svpng.h"
-#pragma GCC diagnostic pop
-
 #define STBI_WRITE_NO_STDIO
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
@@ -222,12 +214,37 @@ int get_screen_dpi()
 }
 #endif
 
-std::vector<uint8_t> encode_to_png(const capture_result_t& cap)
+std::vector<uint8_t> encode_to_image(const capture_result_t& cap, ImageExt ext)
 {
-    std::vector<uint8_t> png;
-    png.reserve(size_t(cap.w) * cap.h * 4);
-    svpng(&png, cap.w, cap.h, cap.view().data(), 1);
-    return png;
+    std::vector<uint8_t> out;
+
+    auto callback = [](void* context, void* data, int size) {
+        auto* buf   = static_cast<std::vector<uint8_t>*>(context);
+        auto* bytes = static_cast<uint8_t*>(data);
+
+        buf->insert(buf->end(), bytes, bytes + size);
+    };
+
+    out.reserve(size_t(cap.w) * cap.h * 4);
+
+    switch (ext)
+    {
+        case ImageExt::PNG:
+            stbi_write_png_to_func(callback, &out, cap.w, cap.h, STBIR_RGBA, cap.data.data(), cap.w * 4);
+            break;
+
+        case ImageExt::JPEG:
+            stbi_write_jpg_to_func(callback, &out, cap.w, cap.h, STBIR_RGBA, cap.data.data(), 90);
+            break;
+
+        case ImageExt::BMP: stbi_write_bmp_to_func(callback, &out, cap.w, cap.h, STBIR_RGBA, cap.data.data()); break;
+        case ImageExt::TGA: stbi_write_tga_to_func(callback, &out, cap.w, cap.h, STBIR_RGBA, cap.data.data()); break;
+
+        default: break;
+    }
+
+    spdlog::debug("out size = {}", out.size());
+    return out;
 }
 
 void fit_to_screen(capture_result_t& img)
@@ -320,7 +337,8 @@ Result<std::string> get_config_image_out_fmt()
     std::string out_path;
     try
     {
-        out_path = fmt::format(fmt::runtime(g_config->File.image_out_fmt + ".png"), now);
+        out_path = fmt::format(
+            fmt::runtime(g_config->File.image_out_fmt + "." + str_tolower(g_config->File.image_out_type.first)), now);
     }
     catch (fmt::format_error& err)
     {
@@ -329,7 +347,7 @@ Result<std::string> get_config_image_out_fmt()
     return Ok(out_path);
 }
 
-Result<> save_png(SavingOp op, const capture_result_t& img)
+Result<> save_image(SavingOp op, const capture_result_t& img, ImageExt ext)
 {
     auto deleter = [](NvdNotification* p) {
         nvd_send_notification(p);
@@ -339,7 +357,7 @@ Result<> save_png(SavingOp op, const capture_result_t& img)
 
     if (op == SavingOp::Clipboard)
     {
-        const Result<>& res = g_clipboard.CopyImage(img);
+        const Result<>& res = g_clipboard.CopyImage(img, ext);
         if (res.ok())
             notif.reset(nvd_notification_new("Copied!", "Screenshot copied to clipboard", NVD_NOTIFICATION_SIMPLE));
         return res;
@@ -351,12 +369,13 @@ Result<> save_png(SavingOp op, const capture_result_t& img)
     minimize_window();
     const fs::path& saved_path_dir = g_cache->GetValue(CacheEntry::ImgSavePath, get_home_pictures_dir().string());
 
-    const char* filter[]  = { "*.png" };
-    const char* save_path = tinyfd_saveFileDialog("Save File",
-                                                  (saved_path_dir / fmt.get()).string().c_str(),  // default path
-                                                  1,                // number of filter patterns
-                                                  filter,           // file filters
-                                                  "Images (*.png)"  // filter description
+    std::string filter_type = ("*." + str_tolower(g_config->File.image_out_type.first));
+    const char* filter[]    = { filter_type.c_str() };
+    const char* save_path   = tinyfd_saveFileDialog("Save File",
+                                                    (saved_path_dir / fmt.get()).string().c_str(),  // default path
+                                                    1,        // number of filter patterns
+                                                    filter,   // file filters
+                                                    "Images"  // filter description
     );
 
     maximize_window();
@@ -371,7 +390,7 @@ Result<> save_png(SavingOp op, const capture_result_t& img)
     if (!fp)
         return Err("Failed to open file to write image");
 
-    const std::vector<uint8_t>& data    = encode_to_png(img);
+    const std::vector<uint8_t>& data    = encode_to_image(img, ext);
     size_t                      written = fwrite(data.data(), 1, data.size(), fp);
     fclose(fp);
     if (written != data.size())
@@ -691,6 +710,20 @@ std::string expand_var(std::string ret)
     env.parse_line(ret);
 
     return ret;
+}
+
+std::string str_toupper(std::string str)
+{
+    for (char& c : str)
+        c = toupper(c);
+    return str;
+}
+
+std::string str_tolower(std::string str)
+{
+    for (char& c : str)
+        c = tolower(c);
+    return str;
 }
 
 fs::path get_config_dir()

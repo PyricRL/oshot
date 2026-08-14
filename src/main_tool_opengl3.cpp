@@ -133,15 +133,9 @@ int run_main_tool()
         glfwSwapInterval(0);  // Disable vsync
         glfwSetWindowShouldClose(window, GLFW_TRUE);
     });
-    g_ss_tool.SetOnComplete([&](SavingOp op, const Result<capture_result_t>& result) {
-        MUST_OK(result, {
-            error("Screenshot failed: {}", result.error_v());
-            glfwSwapInterval(0);  // Disable vsync
-            glfwSetWindowShouldClose(window, GLFW_TRUE);
-            return;
-        });
-
-        MUST_OK(save_png(op, result.get()), error("Failed to save as PNG: {}", result.error_v()));
+    g_ss_tool.SetOnComplete([&](SavingOp op, const capture_result_t& result, ImageExt ext) {
+        MUST_OK(save_image(op, result, ext),
+                error("Failed to save as {}: {}", g_config->File.image_out_type.first, _r.error_v()));
 
         glfwSwapInterval(0);  // Disable vsync
         glfwSetWindowShouldClose(window, GLFW_TRUE);

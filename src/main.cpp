@@ -39,8 +39,8 @@
 #include <thread>
 #include <utility>
 
-#include "platform.hpp"
 #include "cache.hpp"
+#include "platform.hpp"
 
 #if !OSHOT_WINDOWS
 #  include <netdb.h>
@@ -262,7 +262,8 @@ void capture_worker()
             do_copy_image        = false;
             capture_result_t img = std::move(pending_image);
             lk.unlock();
-            MUST_OK(g_clipboard.CopyImage(img), spdlog::error("{}", _r.error_v()));
+            MUST_OK(g_clipboard.CopyImage(img, g_config->File.image_out_type.second),
+                    spdlog::error("{}", _r.error_v()));
             continue;
         }
 

@@ -78,6 +78,17 @@ void Config::LoadConfigFile(const std::string& filename)
     const char* t;
     if (!File.pref_conf_to_env && (t = getenv("TESSDATA_PREFIX")))
         File.ocr_path = t;
+
+    File.image_out_type.first = str_toupper(GetValue<std::string>("default.image-out-ext", "PNG"));
+    if (IMAGE_EXTS_ENUM.find(File.image_out_type.first) != IMAGE_EXTS_ENUM.end())
+    {
+        File.image_out_type.second = IMAGE_EXTS_ENUM.at(File.image_out_type.first);
+    }
+    else
+    {
+        File.image_out_type.first  = "PNG";
+        File.image_out_type.second = ImageExt::PNG;
+    }
 }
 
 void Config::LoadThemeFile(const std::string& filename)
@@ -146,6 +157,7 @@ void Config::GenerateConfig(const std::string& filename, const bool force)
             File.render_anns,
             File.ctrl_c_copy_img,
             fonts_str,
+            File.image_out_type.first,
             File.image_out_fmt,
             File.theme_style,
             File.theme_file_path);

@@ -67,7 +67,7 @@ enum class ToolType : size_t
     CopyImage,
     SaveImage,
     Logo,  // not actually a tooltype
-    Count
+    COUNT
 };
 
 enum class ToolState : size_t
@@ -368,7 +368,7 @@ public:
         return ctx.Has(e);
     }
 
-    void SetOnComplete(const std::function<void(SavingOp, const Result<capture_result_t>&)>& cb)
+    void SetOnComplete(const std::function<void(SavingOp, const capture_result_t&, ImageExt)>& cb)
     {
         m_on_complete = std::move(cb);
     }
@@ -428,23 +428,24 @@ private:
     ImVec2 m_image_origin;
     ImVec2 m_image_end;
 
-    std::shared_ptr<ocr_download_t>                                m_ocr_download;
-    std::vector<std::string>                                       m_ocr_models_list;
-    std::map<std::pair<std::string, float>, font_cache_t>          m_font_cache;
-    std::function<void()>                                          m_on_cancel;
-    std::function<void(const capture_result_t&)>                   m_on_image_reload;
-    std::function<void(SavingOp, const Result<capture_result_t>&)> m_on_complete;
+    std::shared_ptr<ocr_download_t>                       m_ocr_download;
+    std::vector<std::string>                              m_ocr_models_list;
+    std::map<std::pair<std::string, float>, font_cache_t> m_font_cache;
+    std::function<void()>                                 m_on_cancel;
+    std::function<void(const capture_result_t&)>          m_on_image_reload;
+
+    std::function<void(SavingOp, const capture_result_t&, ImageExt)> m_on_complete;
 
     std::string                                    m_last_scanned_ocr_path;
     GeneralContext<SubWindow>                      m_show_window;
     GeneralContext<CurrentAction>                  m_current_actions;
-    std::array<ImTextureRef, idx(ToolType::Count)> m_tool_textures;
+    std::array<ImTextureRef, idx(ToolType::COUNT)> m_tool_textures;
     ToolType                                       m_current_tool = ToolType::kNone;
     std::vector<annotation_t>                      m_annotations;
     annotation_t                                   m_current_annotation;
     rgba_t                                         m_current_color;
     std::unordered_map<std::string, std::string*>  m_imgui_id_texts;
-    std::array<float, idx(ToolType::Count)>        m_tool_thickness;
+    std::array<float, idx(ToolType::COUNT)>        m_tool_thickness;
 
 #ifndef DISABLE_PLUGINS
     // m_plugin_cb must be declared (and therefore constructed) before

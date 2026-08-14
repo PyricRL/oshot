@@ -578,13 +578,13 @@ void ScreenshotTool::HandleShortcutsInput()
 
     if (ImGui::Shortcut(ImGuiKey_S | ImGuiMod_Ctrl, ImGuiInputFlags_RouteGlobal))
         if (m_on_complete)
-            m_on_complete(SavingOp::File, Ok(GetFinalImage()));
+            m_on_complete(SavingOp::File, GetFinalImage(), g_config->File.image_out_type.second);
 
     if (ImGui::Shortcut(ImGuiKey_C | ImGuiMod_Ctrl | (g_config->File.ctrl_c_copy_img ? 0 : ImGuiMod_Shift),
                         ImGuiInputFlags_RouteGlobal) &&
         !ui_blocks_selection())
         if (m_on_complete)
-            m_on_complete(SavingOp::Clipboard, Ok(GetFinalImage()));
+            m_on_complete(SavingOp::Clipboard, GetFinalImage(), g_config->File.image_out_type.second);
 }
 
 void ScreenshotTool::HandleSelectionInput()
@@ -1269,11 +1269,11 @@ void ScreenshotTool::DrawMenuItems()
 
             if (ImGui::MenuItem("Save Image", "CTRL+S"))
                 if (m_on_complete)
-                    m_on_complete(SavingOp::File, Ok(GetFinalImage()));
+                    m_on_complete(SavingOp::File, GetFinalImage(), g_config->File.image_out_type.second);
 
             if (ImGui::MenuItem("Copy Image", g_config->File.ctrl_c_copy_img ? "CTRL+C" : "CTRL+SHIFT+C"))
                 if (m_on_complete)
-                    m_on_complete(SavingOp::Clipboard, Ok(GetFinalImage()));
+                    m_on_complete(SavingOp::Clipboard, GetFinalImage(), g_config->File.image_out_type.second);
 
             ImGui::Separator();
 
@@ -1767,13 +1767,13 @@ void ScreenshotTool::DrawAnnotationToolbar()
 
     if (ImGui::ImageButton("##CopyImageButton", m_tool_textures[idx(ToolType::CopyImage)], ImVec2(24, 24)) &&
         m_on_complete)
-        m_on_complete(SavingOp::Clipboard, Ok(GetFinalImage()));
+        m_on_complete(SavingOp::Clipboard, GetFinalImage(), g_config->File.image_out_type.second);
 
     ImGui::SameLine();
 
     if (ImGui::ImageButton("##SaveImageButton", m_tool_textures[idx(ToolType::SaveImage)], ImVec2(24, 24)) &&
         m_on_complete)
-        m_on_complete(SavingOp::File, Ok(GetFinalImage()));
+        m_on_complete(SavingOp::File, GetFinalImage(), g_config->File.image_out_type.second);
 
     ImGui::SameLine();
     ImGui::Separator();
@@ -1843,11 +1843,9 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
             theme_selected = 0;
     }
     ImGui::Text("Default Theme style");
-    if (ImGui::Combo("##config_theme_style", &theme_selected, "auto\0light\0dark\0classic\0\0"))
-    {
-        static constexpr const char* names[] = { "auto", "light", "dark", "classic" };
-        g_config->File.theme_style           = names[theme_selected];
-    }
+    static constexpr const char* themes_names[] = { "auto", "light", "dark", "classic" };
+    if (ImGui::Combo("##config_theme_style", &theme_selected, themes_names, IM_ARRAYSIZE(themes_names)))
+        g_config->File.theme_style = themes_names[theme_selected];
     ImGui::Spacing();
 
     static const char* toml_filters[] = { "*.toml" };
@@ -1911,9 +1909,32 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
     ImGui::Separator();
     ImGui::Spacing();
 
+    static int image_ext_sel = 0;
+    ImGui::Text("Output filename extension");
+    if (ImGui::BeginCombo("##config_image_out_ext", g_config->File.image_out_type.first.c_str()))
+    {
+        for (size_t i = 0; i < idx(ImageExt::COUNT); ++i)
+        {
+            bool selected = (image_ext_sel == int(i));
+
+            if (ImGui::Selectable(IMAGE_EXTS_STR[i].second, image_ext_sel))
+            {
+                image_ext_sel                        = i;
+                g_config->File.image_out_type.first  = IMAGE_EXTS_STR[i].second;
+                g_config->File.image_out_type.second = toe<ImageExt>(i);
+            }
+
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::Spacing();
+
     ImGui::Text("Output filename format");
     ImGui::SameLine();
-    HelpMarker("The .png extension is appended automatically. Uses {fmt} chrono specifiers.");
+    HelpMarker("The image extension is appended automatically. Uses {fmt} chrono specifiers.");
     ImGui::Spacing();
 
     if (ImGui::InputText("##config_image_out_fmt", &g_config->File.image_out_fmt))
@@ -2003,8 +2024,10 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
 
         ImGui::TextDisabled("Examples:");
         ImGui::Indent();
-        ImGui::BulletText("oshot_{:%%F_%%H-%%M}-test ->  oshot_2025-04-19_14-30-test.png");
-        ImGui::BulletText("oshot_{:%%F_%%H-%%M-%%S}   ->  oshot_2025-04-19_14-30-05.png");
+        ImGui::BulletText("oshot_{:%%F_%%H-%%M}-test ->  oshot_2025-04-19_14-30-test.%s",
+                          g_config->File.image_out_type.first.c_str());
+        ImGui::BulletText("oshot_{:%%F_%%H-%%M-%%S}   ->  oshot_2025-04-19_14-30-05.%s",
+                          g_config->File.image_out_type.first.c_str());
         ImGui::Unindent();
         ImGui::Spacing();
 
@@ -3455,7 +3478,7 @@ void ScreenshotTool::DrawAnnotations()
             case ToolType::CopyImage:
             case ToolType::SaveImage:
             case ToolType::Logo:
-            case ToolType::Count:           break;
+            case ToolType::COUNT:           break;
         }
     };
 

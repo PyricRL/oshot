@@ -36,7 +36,7 @@ public:
     Clipboard(SessionType session) : m_session(session) {}
     void     SetSession(SessionType session) { m_session = session; }
     Result<> CopyText(const std::string& text);
-    Result<> CopyImage(const capture_result_t& cap);
+    Result<> CopyImage(const capture_result_t& cap, ImageExt ext);
 
 private:
     SessionType m_session;

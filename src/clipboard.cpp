@@ -30,6 +30,7 @@
 #include <cstring>
 
 #include "clip/clip.h"
+#include "config.hpp"
 #include "screen_capture.hpp"
 
 #if OSHOT_LINUX
@@ -119,17 +120,18 @@ Result<> Clipboard::CopyText(const std::string& text)
     return Err("Failed to copy text into clipboard");
 }
 
-Result<> Clipboard::CopyImage(const capture_result_t& cap)
+Result<> Clipboard::CopyImage(const capture_result_t& cap, ImageExt ext)
 {
     if (cap.w <= 0 || cap.h <= 0)
         return Err("Image size is empty");
 
     if (m_session == SessionType::Wayland || m_session == SessionType::X11)
     {
-        const Result<int>& res = start_linux_copy(m_session, "image/png");
+        const Result<int>& res =
+            start_linux_copy(m_session, "image/" + str_tolower(g_config->File.image_out_type.first));
         TRY(res);
 
-        const std::vector<uint8_t>& png = encode_to_png(cap);
+        const std::vector<uint8_t>& png = encode_to_image(cap, ext);
 
         const int fd = res.get();
         if (write(fd, reinterpret_cast<const char*>(png.data()), png.size()) == -1)

@@ -165,8 +165,13 @@ ctrl-c-copy-img = {}
 # If empty, or non-existent (or commented out), oshot will use the default font for ImGUI.
 fonts = [{}]
 
+# Extension of the output image when saving/copying.
+# Case insensitive.
+# Accepts: PNG, JPEG, BMP, TGA
+image-out-ext = "{}"
+
 # Format of the output image filename when saving.
-# The .png extension is appended automatically.
+# The image extension is appended automatically.
 # Uses {{fmt}} chrono specifiers. NOTE: 
 #    the colon inside {{}} is required: {{:%F}} correct, {{%F}} will error.
 #

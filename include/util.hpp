@@ -38,9 +38,9 @@
 #include "nvdialog/nvdialog_core.h"
 #include "nvdialog/nvdialog_dialog.h"
 #include "nvdialog/nvdialog_error.h"
+#include "platform.hpp"
 #include "spdlog/spdlog.h"
 #include "version.h"
-#include "platform.hpp"
 
 namespace fs = std::filesystem;
 enum class SavingOp;
@@ -245,6 +245,7 @@ constexpr E toe(T n) noexcept
 struct capture_result_t;
 struct ImVec4;
 struct ImGuiIO;
+enum class ImageExt;
 
 // taken from "fmt/color.h" with the addition of alpha.
 // useful in contexts where ImVec4 is not used.
@@ -271,7 +272,7 @@ struct rgba_t
           b((uint32_t(hex))       & 0xFF),
           a(0xFF) {}
 
-    static constexpr rgba_t from_rgba(uint32_t v) { return { uint8_t(v >> 24), uint8_t(v >> 16), uint8_t(v >> 8), uint8_t(v) }; }
+    static constexpr rgba_t from_rgba(uint32_t v) { return { uint8_t(v >> 24), uint8_t(v >> 16), uint8_t(v >> 8),  uint8_t(v) }; }
     static constexpr rgba_t from_abgr(uint32_t v) { return { uint8_t(v),       uint8_t(v >> 8),  uint8_t(v >> 16), uint8_t(v >> 24) }; }
     static constexpr rgba_t from_argb(uint32_t v) { return { uint8_t(v >> 16), uint8_t(v >> 8),  uint8_t(v),       uint8_t(v >> 24) }; }
     static constexpr rgba_t from_bgra(uint32_t v) { return { uint8_t(v >> 8),  uint8_t(v >> 16), uint8_t(v >> 24), uint8_t(v) }; }
@@ -300,6 +301,22 @@ inline void store_rgba(uint8_t* p, const rgba_t& c)
     p[3] = c.a;
 }
 
+enum class ImageExt
+{
+    PNG,
+    JPEG,
+    BMP,
+    TGA,
+    COUNT
+};
+
+inline constexpr std::array<std::pair<ImageExt, const char*>, idx(ImageExt::COUNT)> IMAGE_EXTS_STR = {
+    { { ImageExt::PNG, "PNG" }, { ImageExt::JPEG, "JPEG" }, { ImageExt::BMP, "BMP" }, { ImageExt::TGA, "TGA" } }
+};
+inline std::unordered_map<std::string_view, ImageExt> IMAGE_EXTS_ENUM = {
+    { { "PNG", ImageExt::PNG }, { "JPEG", ImageExt::JPEG }, { "BMP", ImageExt::BMP }, { "TGA", ImageExt::TGA } }
+};
+
 extern bool g_is_systray;  // old g_is_clipboard_server;
 extern int  g_sock;
 extern char g_sock_path[100];
@@ -320,7 +337,7 @@ static inline const std::string version_infos = fmt::format(
     GIT_COMMIT_DATE,
     GIT_TAG);
 
-std::vector<uint8_t> encode_to_png(const capture_result_t& cap);
+std::vector<uint8_t> encode_to_image(const capture_result_t& cap, ImageExt ext);
 
 std::string replace_str(std::string& str, const std::string_view from, const std::string_view to);
 std::string select_image();
@@ -332,6 +349,8 @@ bool is_system_dark_mode();
 bool hexstr_to_col(const std::string_view hex, uint32_t& out);
 bool hexstr_to_imvec4(const std::string_view hex, ImVec4& out);
 
+std::string str_toupper(std::string str);
+std::string str_tolower(std::string str);
 #if !OSHOT_WINDOWS
 fs::path get_runtime_dir();
 #endif
@@ -345,7 +364,7 @@ fs::path get_cache_dir();
 
 Result<capture_result_t> load_image_rgba(const std::string& path);
 Result<std::string>      get_config_image_out_fmt();
-Result<>                 save_png(SavingOp op, const capture_result_t& img);
+Result<>                 save_image(SavingOp op, const capture_result_t& img, ImageExt ext);
 
 void minimize_window();
 void maximize_window();

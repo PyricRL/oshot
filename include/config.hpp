@@ -53,23 +53,24 @@ public:
 #else
         std::string ocr_path = "./models";
 #endif
-        std::string ocr_get_repo     = "tesseract-ocr/tessdata";
-        std::string ocr_model        = "eng";
-        std::string theme_style      = "auto";
-        std::string theme_file_path  = "theme.toml";
-        std::string image_out_fmt    = "oshot_{:%F_%H-%M}";
-        int         delay            = 0;
-        int         color_picker     = 0;  // 0 = "Bar - Square"; 1 = "Wheel - Triangle";
-        int         cpa_mode         = 2;  // color_picker_alpha_mode
-        bool        allow_out_edit   = false;
-        bool        real_full_screen = false;
-        bool        show_text_tools  = true;
-        bool        enable_vsync     = true;
-        bool        render_anns      = true;
-        bool        pref_conf_to_env = false;
-        bool        ctrl_c_copy_img  = true;
+        std::string ocr_get_repo       = "tesseract-ocr/tessdata";
+        std::string ocr_model          = "eng";
+        std::string theme_style        = "auto";
+        std::string theme_file_path    = "theme.toml";
+        std::string image_out_fmt      = "oshot_{:%F_%H-%M}";
+        std::string image_out_size_fmt = "auto";
+        int         delay              = 0;
+        int         color_picker       = 0;  // 0 = "Bar - Square"; 1 = "Wheel - Triangle";
+        int         cpa_mode           = 2;  // color_picker_alpha_mode
+        bool        allow_out_edit     = false;
+        bool        real_full_screen   = false;
+        bool        show_text_tools    = true;
+        bool        enable_vsync       = true;
+        bool        render_anns        = true;
+        bool        pref_conf_to_env   = false;
+        bool        ctrl_c_copy_img    = true;
 
-        std::pair<std::string, ImageExt> image_out_type;
+        std::pair<std::string, ImageExt> image_out_type = { "png", ImageExt::PNG };
         std::vector<std::string>         fonts;
 
         bool operator==(const config_file_t&) const = default;

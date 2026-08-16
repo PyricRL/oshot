@@ -563,11 +563,9 @@ void ScreenshotTool::HandleShortcutsInput()
     if (ImGui::Shortcut(ImGuiKey_A | ImGuiMod_Ctrl, ImGuiInputFlags_RouteGlobal))
     {
         m_selection.start = point_t{ m_image_origin.x, m_image_origin.y };
-
-        m_selection.end = point_t{ m_image_origin.x + static_cast<float>(m_screenshot.w),
-                                   m_image_origin.y + static_cast<float>(m_screenshot.h) };
-
-        m_state = ToolState::Selected;
+        m_selection.end   = point_t{ m_image_origin.x + static_cast<float>(m_screenshot.w),
+                                     m_image_origin.y + static_cast<float>(m_screenshot.h) };
+        m_state           = ToolState::Selected;
     }
 
     if (ImGui::Shortcut(ImGuiKey_Z | ImGuiMod_Ctrl, ImGuiInputFlags_RouteGlobal) && !m_annotations.empty())
@@ -599,11 +597,11 @@ void ScreenshotTool::HandleSelectionInput()
     }
 
     const ImVec2& mouse_pos = ImGui::GetMousePos();
-    float         sel_x     = m_selection.get_x();
-    float         sel_y     = m_selection.get_y();
-    float         sel_w     = m_selection.get_width();
-    float         sel_h     = m_selection.get_height();
-    ImRect        selection_rect(ImVec2(sel_x, sel_y), ImVec2(sel_x + sel_w, sel_y + sel_h));
+    const float   sel_x     = m_selection.get_x();
+    const float   sel_y     = m_selection.get_y();
+    const float   sel_w     = m_selection.get_width();
+    const float   sel_h     = m_selection.get_height();
+    const ImRect  selection_rect(ImVec2(sel_x, sel_y), ImVec2(sel_x + sel_w, sel_y + sel_h));
 
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && m_input_owner != InputOwner::Selection)
     {
@@ -1154,7 +1152,6 @@ void ScreenshotTool::DrawSelectionBorder()
     const float sel_h = m_selection.get_height();
 
     UpdateHandleHoverState();
-
     UpdateCursor();
 
     // Draw selection border
@@ -1203,8 +1200,50 @@ void ScreenshotTool::DrawSelectionBorder()
 
     if ((ImGui::GetTime() - last_change_time) < 2.f)
     {
-        const std::string& str      = fmt::format("{:.0f}x{:.0f}+{:.0f}+{:.0f}", sel_w, sel_h, sel_x, sel_y);
-        const ImVec2       str_size = ImGui::CalcTextSize(str.c_str());
+        std::string str(fmt::format("{:.0f}x{:.0f}+{:.0f}+{:.0f}", sel_w, sel_h, sel_x, sel_y));
+        if (g_config->File.image_out_size_fmt != "off")
+        {
+            static std::atomic<size_t> estimated_size{ 0 };
+            static std::atomic<bool>   size_computing{ false };
+            static selection_rect_t    tracked_selection{};    // last geometry observed, any source
+            static selection_rect_t    committed_selection{};  // geometry estimated_size currently reflects
+            static std::chrono::steady_clock::time_point last_change_ts{};
+
+            auto same_geo = [](const selection_rect_t& a, const selection_rect_t& b) {
+                return a.get_x() == b.get_x() && a.get_y() == b.get_y() && a.get_width() == b.get_width() &&
+                       a.get_height() == b.get_height();
+            };
+
+            if (!same_geo(m_selection, tracked_selection))
+            {
+                tracked_selection = m_selection;
+                last_change_ts    = std::chrono::steady_clock::now();
+            }
+
+            byte_units_t byte_units;
+            if (!size_computing && !same_geo(tracked_selection, committed_selection) &&
+                std::chrono::steady_clock::now() - last_change_ts > 150ms)
+            {
+                committed_selection = tracked_selection;
+                size_computing      = true;
+
+                capture_result_t snapshot = GetFinalImage();  // render thread only, cheap crop
+                ImageExt         ext      = g_config->File.image_out_type.second;
+
+                std::thread([snapshot = std::move(snapshot), ext]() mutable {
+                    std::vector<uint8_t> img = encode_to_image(snapshot, ext);
+                    estimated_size.store(img.size(), std::memory_order_relaxed);
+                    size_computing.store(false, std::memory_order_relaxed);
+                }).detach();
+            }
+            byte_units = (g_config->File.image_out_size_fmt == "auto")
+                             ? auto_divide_bytes(double(estimated_size.load()), 1024)
+                             : divide_bytes(double(estimated_size.load()), g_config->File.image_out_size_fmt);
+
+            str += fmt::format(
+                "\n{}: {:.2f}{}", g_config->File.image_out_type.first, byte_units.num_bytes, byte_units.unit);
+        }
+        const ImVec2 str_size = ImGui::CalcTextSize(str.c_str());
 
         constexpr float kPaddingX = 6.0f;
         constexpr float kPaddingY = 4.5f;
@@ -1787,8 +1826,14 @@ void ScreenshotTool::DrawAnnotationToolbar()
 
 static void draw_preference_edit_config(const std::function<void()>& refresh_models_func, bool window_just_opened)
 {
-    static const char* font_filters[] = { "*.ttf", "*.otf", "*.ttc", "*.woff", "*.woff2" };
+    static const char* image_prev_units[] = { "off", "auto", "B", "KiB", "MiB", "KB", "MB" };
+    static const char* themes_names[]     = { "auto", "light", "dark", "classic" };
+    static const char* font_filters[]     = { "*.ttf", "*.otf", "*.ttc", "*.woff", "*.woff2" };
+    static const char* toml_filters[]     = { "*.toml" };
 
+    static int                   image_ext_sel    = 0;
+    static int                   image_preuni_sel = 0;
+    static int                   theme_selected   = 0;
     static std::string           new_font;
     static Result<std::string>   r = get_config_image_out_fmt();
     static std::vector<fs::path> resolved_font_paths;
@@ -1829,7 +1874,6 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
     ImGui::Spacing();
 
     // --- Theme settings ---
-    static int theme_selected = 0;
     if (window_just_opened)
     {
         const std::string& ts = g_config->File.theme_style;
@@ -1843,12 +1887,10 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
             theme_selected = 0;
     }
     ImGui::Text("Default Theme style");
-    static constexpr const char* themes_names[] = { "auto", "light", "dark", "classic" };
     if (ImGui::Combo("##config_theme_style", &theme_selected, themes_names, IM_ARRAYSIZE(themes_names)))
         g_config->File.theme_style = themes_names[theme_selected];
     ImGui::Spacing();
 
-    static const char* toml_filters[] = { "*.toml" };
     ImGui::Text("Default Theme file path");
     ImGui::SameLine();
     HelpMarker(
@@ -1909,7 +1951,6 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
     ImGui::Separator();
     ImGui::Spacing();
 
-    static int image_ext_sel = 0;
     ImGui::Text("Output filename extension");
     if (ImGui::BeginCombo("##config_image_out_ext", g_config->File.image_out_type.first.c_str()))
     {
@@ -1922,6 +1963,29 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
                 image_ext_sel                        = i;
                 g_config->File.image_out_type.first  = IMAGE_EXTS_STR[i].second;
                 g_config->File.image_out_type.second = toe<ImageExt>(i);
+            }
+
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::Spacing();
+
+    ImGui::Text("Size preview unit");
+    ImGui::SameLine();
+    HelpMarker("Unit used to show the selection's estimated file size next to the selection border");
+    if (ImGui::BeginCombo("##config_image_out_size_fmt", g_config->File.image_out_size_fmt.c_str()))
+    {
+        for (int i = 0; i < IM_ARRAYSIZE(image_prev_units); ++i)
+        {
+            bool selected = image_preuni_sel == int(i);
+
+            if (ImGui::Selectable(image_prev_units[i], image_preuni_sel))
+            {
+                image_preuni_sel                  = i;
+                g_config->File.image_out_size_fmt = image_prev_units[i];
             }
 
             if (selected)
@@ -1954,7 +2018,7 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
             ImGui::TableSetColumnIndex(0);
             ImGui::TextDisabled("%s", spec);
             ImGui::TableSetColumnIndex(1);
-            ImGui::Text("%s", desc);
+            ImGui::TextUnformatted(desc);
         };
 
         ImGui::Spacing();

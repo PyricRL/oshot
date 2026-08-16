@@ -144,7 +144,7 @@ vsync = {}
 # Allow the extracted output to be editable.
 allow-text-edit = {}
 
-# Display the text tools (OCR, Bar/QR code scan) at startup.
+# Display the text tools window (OCR, Bar/QR code scan) at startup.
 show-text-tools = {}
 
 # Prefer using config variables over environment variable.
@@ -167,7 +167,7 @@ fonts = [{}]
 
 # Extension of the output image when saving/copying.
 # Case insensitive.
-# Accepts: PNG, JPEG, BMP, TGA
+# Accepts: "png", "jpeg", "bmp", "tga"
 image-out-ext = "{}"
 
 # Format of the output image filename when saving.
@@ -177,6 +177,12 @@ image-out-ext = "{}"
 #
 # Default: "oshot_{{:%F_%H-%M}}"
 image-out-fmt = "{}"
+
+# Size format of the capture in the selected image
+# extension from image-out-ext, shown under the capture size widget.
+# Case Sensitive.
+# Accepts: "off", "auto", "B", "KiB", "MiB", "KB",  "MB", more...
+image-out-size-ind = "{}"
 
 # Base UI theme: "auto" (follow OS dark/light), "dark", "light", or "classic".
 # Fine-grained overrides live in theme.toml.

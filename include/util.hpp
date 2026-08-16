@@ -227,6 +227,12 @@ private:
     E    m_err;
 };
 
+struct byte_units_t
+{
+    std::string unit;
+    double      num_bytes;
+};
+
 template <typename E>
 constexpr size_t idx(E e) noexcept
 {
@@ -371,11 +377,13 @@ void maximize_window();
 void extern_glfwTerminate();
 void extern_glfwSwapInterval(int v);
 
-void fit_to_screen(capture_result_t& img);
-void rgba_to_grayscale(const uint8_t* rgba, uint8_t* result, int width, int height);
-void build_font_atlas(ImGuiIO& io);
-int  get_screen_dpi();
-bool parse_hex_rgba(const std::string_view hex, rgba_t& out);
+byte_units_t auto_divide_bytes(const double num, const std::uint16_t base, const std::string_view maxprefix = "");
+byte_units_t divide_bytes(const double num, const std::string_view prefix);
+void         fit_to_screen(capture_result_t& img);
+void         rgba_to_grayscale(const uint8_t* rgba, uint8_t* result, int width, int height);
+void         build_font_atlas(ImGuiIO& io);
+int          get_screen_dpi();
+bool         parse_hex_rgba(const std::string_view hex, rgba_t& out);
 
 #define BOLD_COLOR(x) (fmt::emphasis::bold | fmt::fg(x))
 

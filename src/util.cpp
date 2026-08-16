@@ -414,6 +414,56 @@ void rgba_to_grayscale(const uint8_t* src, uint8_t* result, int width, int heigh
     }
 }
 
+byte_units_t auto_divide_bytes(const double num, const std::uint16_t base, const std::string_view maxprefix)
+{
+    double size = num;
+
+    std::array<std::string_view, 9> prefixes;
+    if (base == 1024)
+        prefixes = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB" };
+    else if (base == 1000)
+        prefixes = { "B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
+    else
+        prefixes = { "B" };
+
+    size_t      counter = 0;
+    const auto& max_it  = !maxprefix.empty() ? std::find(prefixes.begin(), prefixes.end(), maxprefix) : prefixes.end();
+
+    while (counter + 1 < prefixes.size() && size >= base)
+    {
+        if (max_it != prefixes.end() && prefixes[counter] == maxprefix)
+            break;
+        size /= base;
+        ++counter;
+    }
+
+    return { prefixes[counter].data(), size };
+}
+
+byte_units_t divide_bytes(const double num, const std::string_view prefix)
+{
+    if (prefix == "B")
+        return { "B", num };
+
+    // GiB
+    // 012
+    const std::uint16_t             base = (prefix.size() == 3 && prefix[1] == 'i') ? 1024 : 1000;
+    std::array<std::string_view, 9> prefixes;
+    if (base == 1024)
+        prefixes = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB" };
+    else if (base == 1000)
+        prefixes = { "B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
+
+    const auto& it = std::find(prefixes.begin(), prefixes.end(), prefix);
+    if (it == prefixes.end())
+        return { "B", num };
+
+    const size_t index = std::distance(prefixes.begin(), it);
+    const double value = num / std::pow(static_cast<double>(base), index);
+
+    return { prefix.data(), value };
+}
+
 std::string replace_str(std::string& str, const std::string_view from, const std::string_view to)
 {
     size_t start_pos = 0;

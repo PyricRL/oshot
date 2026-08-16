@@ -25,6 +25,7 @@
 
 #include "config.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
@@ -89,6 +90,13 @@ void Config::LoadConfigFile(const std::string& filename)
         File.image_out_type.first  = "PNG";
         File.image_out_type.second = ImageExt::PNG;
     }
+
+    static constexpr std::array<std::string_view, 19> prefixes = { "off", "auto", "B",   "KiB", "MiB", "GiB", "TiB",
+                                                                   "PiB", "EiB",  "ZiB", "YiB", "KB",  "MB",  "GB",
+                                                                   "TB",  "PB",   "EB",  "ZB",  "YB" };
+    File.image_out_size_fmt = GetValue<std::string>("default.image-out-size-ind", "auto");
+    if (std::find(prefixes.begin(), prefixes.end(), File.image_out_size_fmt) == prefixes.end())
+        File.image_out_size_fmt = "auto";
 }
 
 void Config::LoadThemeFile(const std::string& filename)
@@ -159,6 +167,7 @@ void Config::GenerateConfig(const std::string& filename, const bool force)
             fonts_str,
             File.image_out_type.first,
             File.image_out_fmt,
+            File.image_out_size_fmt,
             File.theme_style,
             File.theme_file_path);
 }

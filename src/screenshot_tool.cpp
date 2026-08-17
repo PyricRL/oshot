@@ -477,7 +477,14 @@ void ScreenshotTool::RenderOverlay()
 
     // Screenshot as a centered bg image
     UpdateWindowBg();
+
+    if (ImGui::GetPlatformIO().DrawCallback_SetSamplerNearest)
+        ImGui::GetBackgroundDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerNearest, nullptr);
+
     ImGui::GetBackgroundDrawList()->AddImage(m_texture_id, m_image_origin, m_image_end);
+
+    if (ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear)
+        ImGui::GetBackgroundDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear, nullptr);
 
     if (m_selection.get_width() == 0 || m_selection.get_height() == 0)
     {
@@ -950,12 +957,20 @@ void ScreenshotTool::HandleColorPickerInput()
         const ImVec2 uv_min(uv_cx - half_src_px_x, uv_cy - half_src_px_y);
         const ImVec2 uv_max(uv_cx + half_src_px_x, uv_cy + half_src_px_y);
 
+        ImGuiPlatformIO& platform_io  = ImGui::GetPlatformIO();
+        ImDrawList*      dl           = ImGui::GetWindowDrawList();
+        const ImVec2&    loupe_origin = ImGui::GetCursorScreenPos();
+
+        if (platform_io.DrawCallback_SetSamplerNearest)
+            dl->AddCallback(platform_io.DrawCallback_SetSamplerNearest, nullptr);
+
         // Draw the magnified image
-        const ImVec2& loupe_origin = ImGui::GetCursorScreenPos();
         ImGui::Image(m_texture_id, ImVec2(k_loupe_px, k_loupe_px), uv_min, uv_max);
 
+        if (platform_io.DrawCallback_SetSamplerLinear)
+            dl->AddCallback(platform_io.DrawCallback_SetSamplerLinear, nullptr);
+
         // Draw crosshair over the loupe
-        ImDrawList*     dl  = ImGui::GetWindowDrawList();
         const ImVec2    ctr = ImVec2(loupe_origin.x + k_loupe_px * 0.5f, loupe_origin.y + k_loupe_px * 0.5f);
         constexpr float arm = 10.0f;
         constexpr float gap = 3.0f;  // gap around the centre dot

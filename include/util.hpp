@@ -316,6 +316,13 @@ enum class ImageExt
     COUNT
 };
 
+enum class SavingOp
+{
+    kNone,
+    Clipboard,
+    File
+};
+
 inline constexpr std::array<std::pair<ImageExt, const char*>, idx(ImageExt::COUNT)> IMAGE_EXTS_STR = {
     { { ImageExt::PNG, "PNG" }, { ImageExt::JPEG, "JPEG" }, { ImageExt::BMP, "BMP" }, { ImageExt::TGA, "TGA" } }
 };

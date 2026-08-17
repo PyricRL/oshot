@@ -96,10 +96,12 @@ GENERAL OPTIONS:
     -d, --delay <MILLIS>        Delay the app before acquiring the screenshot by milliseconds.
                                 Won't affect if using the -f flag
 
-    -g, --gui                   Only launch the GUI.
-    -t, --tray                  Only launch system tray.
+    --instant-copy/save         Instant copy/save a selection once it's selected
     --gen-config [<PATH>]       Generate default config file. If PATH is omitted, saves to default location.
                                 Prompts before overwriting.
+
+    -g, --gui                   Only launch the GUI.
+    -t, --tray                  Only launch system tray.
 )");
 
 // default oshot config

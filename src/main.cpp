@@ -158,7 +158,9 @@ static bool parseargs(int argc, char* argv[], const fs::path& configFile)
         {"source",  required_argument, 0, 'f'},
         {"override",required_argument, 0, 'O'},
 
-        {"gen-config", optional_argument, 0, "gen-config"_fnv1a16},
+        {"instant-save", no_argument,       0, "instant-save"_fnv1a16},
+        {"instant-copy", no_argument,       0, "instant-copy"_fnv1a16},
+        {"gen-config",   optional_argument, 0, "gen-config"_fnv1a16},
 
         {0,0,0,0}
     };
@@ -189,6 +191,11 @@ static bool parseargs(int argc, char* argv[], const fs::path& configFile)
                 g_config->Runtime.only_launch_tray = true; break;
             case 'g':
                 g_config->Runtime.only_launch_gui = true; break;
+
+            case "instant-save"_fnv1a16:
+                g_config->Runtime.instant_copy_save = SavingOp::File; break;
+            case "instant-copy"_fnv1a16:
+                g_config->Runtime.instant_copy_save = SavingOp::Clipboard; break;
 
             case "gen-config"_fnv1a16:
                 if (OPTIONAL_ARGUMENT_IS_PRESENT)

@@ -358,6 +358,22 @@ Result<> ScreenshotTool::Start()
 
 Result<> ScreenshotTool::StartWindow()
 {
+    // Do not load anything about the text tools window,
+    // just the screenshot one
+    if (g_config->Runtime.instant_copy_save != SavingOp::kNone)
+    {
+        m_state = ToolState::Selecting;
+#if OSHOT_MACOS
+        m_texture_id = ImTextureRef{};  // will be set by backend
+#else
+        const Result<ImTextureRef>& res = CreateTexture(nullptr, m_screenshot.view(), m_screenshot.w, m_screenshot.h);
+        TRY_MSG(res, "Failed to create openGL texture: {}");
+
+        m_texture_id = res.get();
+#endif
+        return Ok();
+    }
+
 #ifndef DISABLE_PLUGINS
     static std::once_flag plugins_loaded;
     std::call_once(plugins_loaded, [&] { load_plugins(m_plugin_manager.GetStateManager().GetAllRepos()); });
@@ -489,6 +505,9 @@ void ScreenshotTool::RenderOverlay()
             HandleColorPickerInput();
         else
             HandleAnnotationInput();
+
+        if (g_config->Runtime.instant_copy_save != SavingOp::kNone)
+            m_on_complete(g_config->Runtime.instant_copy_save, GetFinalImage(), g_config->File.image_out_type.second);
     }
 
     ImGui::End();
@@ -1220,7 +1239,6 @@ void ScreenshotTool::DrawSelectionBorder()
                 last_change_ts    = std::chrono::steady_clock::now();
             }
 
-            byte_units_t byte_units;
             if (!size_computing && !same_geo(tracked_selection, committed_selection) &&
                 std::chrono::steady_clock::now() - last_change_ts > 150ms)
             {
@@ -1236,9 +1254,10 @@ void ScreenshotTool::DrawSelectionBorder()
                     size_computing.store(false, std::memory_order_relaxed);
                 }).detach();
             }
-            byte_units = (g_config->File.image_out_size_fmt == "auto")
-                             ? auto_divide_bytes(double(estimated_size.load()), 1024)
-                             : divide_bytes(double(estimated_size.load()), g_config->File.image_out_size_fmt);
+            byte_units_t byte_units =
+                (g_config->File.image_out_size_fmt == "auto")
+                    ? auto_divide_bytes(double(estimated_size.load()), 1024)
+                    : divide_bytes(double(estimated_size.load()), g_config->File.image_out_size_fmt);
 
             str += fmt::format(
                 "\n{}: {:.2f}{}", g_config->File.image_out_type.first, byte_units.num_bytes, byte_units.unit);

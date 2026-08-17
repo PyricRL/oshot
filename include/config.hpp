@@ -81,10 +81,11 @@ public:
     struct runtime_settings_t
     {
         std::string source_file;
-        int         preferred_psm    = 0;
-        bool        enable_handles   = true;
-        bool        only_launch_tray = false;
-        bool        only_launch_gui  = false;
+        int         preferred_psm     = 0;
+        bool        enable_handles    = true;
+        bool        only_launch_tray  = false;
+        bool        only_launch_gui   = false;
+        SavingOp    instant_copy_save = SavingOp::kNone;
 
         bool operator==(const runtime_settings_t&) const = default;
     } Runtime;

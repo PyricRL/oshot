@@ -79,12 +79,6 @@ enum class ToolState : size_t
     Resizing
 };
 
-enum class SavingOp
-{
-    Clipboard,
-    File
-};
-
 enum class HandleHovered
 {
     kNone,

@@ -94,10 +94,10 @@ int  g_sock = -1;
 // Defined and registered in src/main_tool_* source files
 namespace main_tool
 {
-void (*minimize_fn)()         = nullptr;
-void (*maximize_fn)()         = nullptr;
-void (*terminate_fn)()        = nullptr;
-void (*swap_interval_fn)(int) = nullptr;
+void (*minimize_fn)()                 = nullptr;
+void (*maximize_fn)()                 = nullptr;
+void (*_extern_glfwTerminate)()       = nullptr;
+void (*_extern_glfwSwapInterval)(int) = nullptr;
 }  // namespace main_tool
 
 static const std::unordered_map<std::string, std::string>& get_xdg_user_dirs()
@@ -718,13 +718,13 @@ fs::path get_home_pictures_dir()
 
 void register_window_callbacks(void (*minimize_fn)(),
                                void (*maximize_fn)(),
-                               void (*terminate_fn)(),
-                               void (*swap_interval_fn)(int))
+                               void (*_extern_glfwTerminate)(),
+                               void (*_extern_glfwSwapInterval)(int))
 {
-    main_tool::minimize_fn      = minimize_fn;
-    main_tool::maximize_fn      = maximize_fn;
-    main_tool::terminate_fn     = terminate_fn;
-    main_tool::swap_interval_fn = swap_interval_fn;
+    main_tool::minimize_fn              = minimize_fn;
+    main_tool::maximize_fn              = maximize_fn;
+    main_tool::_extern_glfwTerminate    = _extern_glfwTerminate;
+    main_tool::_extern_glfwSwapInterval = _extern_glfwSwapInterval;
 }
 
 void minimize_window()
@@ -739,13 +739,13 @@ void maximize_window()
 }
 void extern_glfwTerminate()
 {
-    if (main_tool::terminate_fn)
-        main_tool::terminate_fn();
+    if (main_tool::_extern_glfwTerminate)
+        main_tool::_extern_glfwTerminate();
 }
 void extern_glfwSwapInterval(int v)
 {
-    if (main_tool::swap_interval_fn)
-        main_tool::swap_interval_fn(v);
+    if (main_tool::_extern_glfwSwapInterval)
+        main_tool::_extern_glfwSwapInterval(v);
 }
 
 std::string expand_var(std::string ret)

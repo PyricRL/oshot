@@ -17,8 +17,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 #add_compile_options($<$<CONFIG:Debug>:-fno-omit-frame-pointer>)
 #add_link_options($<$<CONFIG:Debug>:-fsanitize=address>)
 
-# GCC/Clang default Release flags already include -O3; this just makes it
-# explicit.
 if(NOT MSVC AND NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "-O")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 endif()
@@ -57,8 +55,7 @@ endfunction()
 # https://github.com/libcpr/cpr/blob/5f475522597b8f3721e2440daddeced7a969f24c/CMakeLists.txt#L39
 # NOTE: definitions are collected into OSHOT_OPTION_DEFINITIONS instead of
 # using add_definitions(), which is directory-scoped and would otherwise leak
-# into every target declared afterward - including vendored third-party
-# libs (fmt, imgui, tray, clip, dylib, nvdialog, tiny-process-library).
+# into every target declared afterward.
 # They're applied to just ${PROJECT_NAME} once it exists (see below).
 set(OSHOT_OPTION_DEFINITIONS "")
 macro(add_option OPTION_NAME OPTION_TEXT OPTION_DEFAULT DEFINE_OPTION)
@@ -92,6 +89,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 find_package(glfw3 REQUIRED)
+find_package(OpenGL REQUIRED)
 
 if(TARGET glfw::glfw)
     set(GLFW_TARGET glfw::glfw)
@@ -103,7 +101,6 @@ else()
     message(FATAL_ERROR "GLFW found but no usable CMake target was exported")
 endif()
 
-find_package(OpenGL REQUIRED)
 pkg_check_modules(TESSERACT REQUIRED IMPORTED_TARGET tesseract)
 pkg_check_modules(LEPTONICA REQUIRED IMPORTED_TARGET lept)
 pkg_check_modules(ZBAR REQUIRED IMPORTED_TARGET zbar)
@@ -130,6 +127,15 @@ if(UNIX AND NOT APPLE)
     pkg_check_modules(XRANDR REQUIRED xrandr)
     pkg_check_modules(GTK REQUIRED gtk+-3.0)
     pkg_check_modules(DBUS REQUIRED dbus-1)
+    pkg_check_modules(
+        WAYLAND
+        REQUIRED
+        IMPORTED_TARGET
+        wayland-client
+        wayland-server
+        wayland-egl
+        wayland-cursor
+    )
 endif()
 
 # -----------------------------
@@ -145,13 +151,12 @@ add_executable(
 enable_lto(${PROJECT_NAME})
 
 set(VERSION_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h)
+set(VERSION_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generateVersion.sh)
 add_custom_command(
     OUTPUT ${VERSION_HEADER}
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generateVersion.sh
+    COMMAND ${VERSION_SCRIPT}
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in
-        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generateVersion.sh
+    DEPENDS ${VERSION_HEADER}.in ${VERSION_SCRIPT}
     COMMENT "Generating version header"
 )
 add_custom_target(generate_version DEPENDS ${VERSION_HEADER})
@@ -176,11 +181,6 @@ target_compile_definitions(
     PUBLIC VERSION="${PROJECT_VERSION}" TOML_HEADER_ONLY=0
 )
 
-# oshot's own sources (main.cpp, main_tool_opengl3.cpp) reference
-# globals.cpp's externs directly (g_sock, g_ss_tool, g_config, g_cache, ...),
-# which live in the real oshot_common SHARED library. There's no separate
-# oshot_plugin library anymore (see the note above oshot_common's sources
-# below for why), so linking oshot_common alone is enough.
 target_link_libraries(${PROJECT_NAME} PRIVATE oshot_common)
 
 if(WIN32 AND NOT WINDOWS_CMD)
@@ -258,6 +258,22 @@ if(NOT DISABLE_PLUGINS)
     )
 endif()
 
+if(UNIX AND NOT APPLE)
+    set(PROTOCOL_BASE_NAME xdg-output-unstable-v1)
+    set(PROTOCOL_HEADER
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/${PROTOCOL_BASE_NAME}-client-protocol.h
+    )
+    set(PROTOCOL_SOURCE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/${PROTOCOL_BASE_NAME}-protocol.c
+    )
+    list(APPEND OSHOT_COMMON_SOURCES src/wl_get_monitors.cpp ${PROTOCOL_SOURCE})
+    set_source_files_properties(
+        src/wl_get_monitors.cpp
+        ${PROTOCOL_SOURCE}
+        PROPERTIES COMPILE_FLAGS "-Wno-unused-parameter"
+    )
+endif()
+
 add_library(oshot_common ${OSHOT_COMMON_LIB_TYPE} ${OSHOT_COMMON_SOURCES})
 
 if(OSHOT_OPTION_DEFINITIONS)
@@ -273,7 +289,10 @@ if(NOT DISABLE_PLUGINS)
             WINDOWS_EXPORT_ALL_SYMBOLS ON
             POSITION_INDEPENDENT_CODE ON
     )
-    target_include_directories(oshot_common PUBLIC ${CMAKE_SOURCE_DIR}/oshotpm/include)
+    target_include_directories(
+        oshot_common
+        PUBLIC ${CMAKE_SOURCE_DIR}/oshotpm/include
+    )
 endif()
 
 enable_lto(oshot_common)
@@ -305,7 +324,7 @@ elseif(APPLE)
 else()
     target_include_directories(
         oshot_common
-        PRIVATE ${APPINDICATOR_INCLUDE_DIRS}
+        PRIVATE ${APPINDICATOR_INCLUDE_DIRS} ${WAYLAND_INCLUDE_DIRS}
     )
     target_compile_options(oshot_common PRIVATE ${APPINDICATOR_CFLAGS_OTHER})
 
@@ -319,12 +338,44 @@ else()
     )
     target_link_libraries(
         oshot_common
-        PRIVATE ${GIO_LIBRARIES} ${XRANDR_LIBRARIES}
+        PRIVATE ${GIO_LIBRARIES} ${XRANDR_LIBRARIES} PkgConfig::WAYLAND
     )
     target_compile_options(
         oshot_common
-        PRIVATE ${GIO_CFLAGS_OTHER} ${XRANDR_CFLAGS_OTHER}
+        PRIVATE
+            ${GIO_CFLAGS_OTHER}
+            ${XRANDR_CFLAGS_OTHER}
+            ${WAYLAND_CFLAGS_OTHER}
     )
+
+    pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+    pkg_get_variable(WAYLAND_SCANNER wayland-scanner wayland_scanner)
+    set(XDG_OUTPUT_XML
+        "${WAYLAND_PROTOCOLS_DIR}/unstable/xdg-output/${PROTOCOL_BASE_NAME}.xml"
+    )
+
+    add_custom_command(
+        OUTPUT ${PROTOCOL_HEADER}
+        COMMAND
+            ${WAYLAND_SCANNER} client-header ${XDG_OUTPUT_XML}
+            ${PROTOCOL_HEADER}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS ${XDG_OUTPUT_XML}
+        COMMENT "Generating Wayland ${PROTOCOL_BASE_NAME} header"
+    )
+    add_custom_command(
+        OUTPUT ${PROTOCOL_SOURCE}
+        COMMAND
+            ${WAYLAND_SCANNER} private-code ${XDG_OUTPUT_XML} ${PROTOCOL_SOURCE}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS ${XDG_OUTPUT_XML}
+        COMMENT "Generating Wayland ${PROTOCOL_BASE_NAME} private code"
+    )
+    add_custom_target(
+        generate_protocol
+        DEPENDS ${PROTOCOL_HEADER} ${PROTOCOL_SOURCE}
+    )
+    add_dependencies(oshot_common generate_protocol)
 endif()
 
 target_link_libraries(

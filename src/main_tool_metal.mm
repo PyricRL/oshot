@@ -53,8 +53,8 @@ void glfw_error_callback(int error, const char* description);
 void glfw_drop_callback(GLFWwindow*, int count, const char** paths);
 void register_window_callbacks(void (*minimize_fn)(),
                                void (*maximize_fn)(),
-                               void (*terminate_fn)(),
-                               void (*swap_interval_fn)(int));
+                               void (*_extern_glfwTerminate)(),
+                               void (*_extern_glfwSwapInterval)(int));
 
 GLFWwindow* window = nullptr;
 

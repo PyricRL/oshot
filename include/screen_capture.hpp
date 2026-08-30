@@ -27,6 +27,7 @@
 #define _SCREEN_CAPTURE_HPP_
 
 #include <cstdint>
+#include <deque>
 #include <span>
 #include <vector>
 
@@ -36,8 +37,8 @@ struct region_t
 {
     int x{};
     int y{};
-    int width{};
-    int height{};
+    int w{};
+    int h{};
 };
 
 struct capture_result_t
@@ -48,6 +49,15 @@ struct capture_result_t
 
     std::span<const uint8_t> view() const { return data; }
     std::span<uint8_t>       view() { return data; }
+};
+
+struct monitor_t
+{
+    char     name[64];
+    region_t geo;
+    bool     done;
+    void*    handle    = nullptr;  // struct wl_output*
+    int32_t  transform = 0;        // WL_OUTPUT_TRANSFORM_* value
 };
 
 enum class SessionType
@@ -66,6 +76,10 @@ Result<capture_result_t> capture_full_screen_spectacle();
 Result<capture_result_t> capture_full_screen_windows();
 Result<capture_result_t> capture_full_screen_macos();
 
-SessionType get_session_type();
+SessionType              get_session_type();
+capture_result_t         rotate_rgba(const capture_result_t& src, int quarter_turns_cw);
+Result<capture_result_t> crop_to_monitor(const capture_result_t&     full,
+                                         const std::deque<region_t>& monitors,
+                                         const region_t&             target);
 
 #endif  // !_SCREEN_CAPTURE_HPP_

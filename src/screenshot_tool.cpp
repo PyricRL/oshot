@@ -70,6 +70,8 @@
 #  define GL_NO_ERROR 0
 #endif
 
+std::deque<monitor_t> wl_get_monitors();
+
 using namespace std::chrono_literals;
 
 constexpr rgba_t::rgba_t(ImVec4 vec)
@@ -323,17 +325,19 @@ void apply_imgui_theme()
 Result<> ScreenshotTool::Start()
 {
     Result<capture_result_t> result{ Err() };
+    m_session = get_session_type();
 
     if (!g_config->Runtime.source_file.empty())
     {
         result = load_image_rgba(g_config->Runtime.source_file);
+        TRY_MSG(result, "Failed to load image: {}");
     }
     else
     {
         if (g_config->File.delay > 0)
             std::this_thread::sleep_for(std::chrono::milliseconds(g_config->File.delay));
 
-        switch (get_session_type())
+        switch (m_session)
         {
             case SessionType::X11:     result = capture_full_screen_x11(); break;
             case SessionType::Wayland: result = capture_full_screen_wayland(); break;
@@ -342,18 +346,30 @@ Result<> ScreenshotTool::Start()
             case SessionType::MacOS:   result = capture_full_screen_macos(); break;
             default:                   return Err("Unknown platform");
         }
-    }
+        TRY_MSG(result, "Failed to capture screenshot: {}");
 
-    TRY_MSG(result, "Failed to load image: {}");
+#if OSHOT_LINUX
+        if (m_session == SessionType::Wayland)
+        {
+            m_wayland_monitors = wl_get_monitors();
+            if (m_wayland_monitors.size() > 0)
+                m_show_window.Set(SubWindow::OutputMenuSelection);
+        }
+#endif
+    }
 
     m_screenshot = std::move(result.get());
     m_tool_thickness.fill(3.0f);
     m_tool_thickness[idx(ToolType::Text)] = 16.0f;
+
+    spdlog::debug("captured screenshots: {}x{}, size: {}", m_screenshot.w, m_screenshot.h, m_screenshot.view().size());
     return Ok();
 }
 
 Result<> ScreenshotTool::StartWindow()
 {
+    fit_to_screen(m_screenshot);
+
     // Do not load anything about the text tools window,
     // just the screenshot one
     if (g_config->Runtime.instant_copy_save != SavingOp::kNone)
@@ -397,7 +413,6 @@ Result<> ScreenshotTool::StartWindow()
 
     m_show_window.Set(SubWindow::MainTextTools, g_config->File.show_text_tools);
 
-    fit_to_screen(m_screenshot);
     SyncRuntimeFromConfig();
 
 #if OSHOT_MACOS
@@ -481,6 +496,17 @@ void ScreenshotTool::RenderOverlay()
 
     if (ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear)
         ImGui::GetBackgroundDrawList()->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerLinear, nullptr);
+
+    if (m_session == SessionType::Wayland && m_show_window.Has(SubWindow::OutputMenuSelection))
+    {
+        DrawOutputMenuSelection();
+        DrawDarkOverlay();
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape) && !disable_esc)
+            Cancel();
+        ImGui::End();
+        ImGui::PopStyleVar();
+        return;
+    }
 
     if (m_selection.get_width() == 0 || m_selection.get_height() == 0)
     {
@@ -3575,6 +3601,67 @@ void ScreenshotTool::DrawAnnotations()
         draw_annotation(m_current_annotation);
 }
 
+void ScreenshotTool::DrawOutputMenuSelection()
+{
+#if OSHOT_LINUX
+    if (!m_show_window.Has(SubWindow::OutputMenuSelection))
+        return;
+
+    static int output_sel = 0;
+    static int trans_sel  = 0;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 14));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 10));
+
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(320, 0), ImVec2(520, 480));
+    ImGui::Begin("Choose an output to capture##select_output_crop",
+                 nullptr,
+                 ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
+
+    std::deque<region_t> layout;
+
+    for (size_t i = 0; i < m_wayland_monitors.size(); ++i)
+    {
+        const monitor_t& m = m_wayland_monitors[i];
+        layout.push_back(m.geo);
+
+        ImGui::PushID(int(i));
+        ImGui::RadioButton(
+            fmt::format("{} ({}x{})", m.name[0] ? m.name : "Unknown", m.geo.w, m.geo.h).c_str(), &output_sel, int(i));
+        ImGui::PopID();
+    }
+
+    output_sel              = layout.empty() ? 0 : std::clamp(output_sel, 0, static_cast<int>(layout.size()) - 1);
+    const monitor_t& target = m_wayland_monitors[output_sel];
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Detected transform: %d", target.transform);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::Combo("##rotate_combo", &trans_sel, "No Rotation\0Left Rotation\0Down Rotation\0Right Rotation\0\0");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(
+            "Overrides the auto-detected output rotation for this crop.\nShould normally stay \"No Rotation\".");
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    const float button_width = ImGui::GetContentRegionAvail().x;
+    ImGui::BeginDisabled(layout.empty());
+    if (ImGui::Button("Crop", ImVec2(button_width, 0)))
+    {
+        m_show_window.Clear(SubWindow::OutputMenuSelection);
+        MUST_OK(g_ss_tool.CropToOutput(layout, target, trans_sel),
+                error("Crop to focused monitor failed: {}", _r.error_v()));
+    }
+    ImGui::EndDisabled();
+
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+#endif
+}
+
 void ScreenshotTool::Cancel()
 {
     m_state = ToolState::Idle;
@@ -3657,21 +3744,21 @@ capture_result_t ScreenshotTool::GetFinalImage(bool is_text_tools)
     const region_t& region = GetActiveRegion();
 
     capture_result_t result;
-    result.w = region.width;
-    result.h = region.height;
-    result.data.resize(size_t(region.width) * region.height * 4);
+    result.w = region.w;
+    result.h = region.h;
+    result.data.resize(size_t(region.w) * region.h * 4);
 
     std::span<const uint8_t> src(m_screenshot.view());
     std::span<uint8_t>       dst(result.data);
 
     const int src_width = m_screenshot.w;
-    const int dst_width = region.width;
+    const int dst_width = region.w;
 
     // Calculate bounds
     const int start_y = std::max(0, -region.y);
-    const int end_y   = std::min(region.height, m_screenshot.h - region.y);
+    const int end_y   = std::min(region.h, m_screenshot.h - region.y);
     const int start_x = std::max(0, -region.x);
-    const int end_x   = std::min(region.width, m_screenshot.w - region.x);
+    const int end_x   = std::min(region.w, m_screenshot.w - region.x);
 
     int width = end_x - start_x;
 
@@ -4041,6 +4128,29 @@ void ScreenshotTool::UpdateWindowBg()
         m_image_origin.y + image_size.y
     );
     // clang-format on
+}
+
+Result<> ScreenshotTool::CropToOutput(const std::deque<region_t>& layout, const monitor_t& target, int transform)
+{
+    Result<capture_result_t> cropped = crop_to_monitor(m_screenshot, layout, target.geo);
+    TRY_MSG(cropped, "Failed to crop capture to focused monitor: {}");
+
+    m_screenshot = std::move(cropped.get());
+
+    spdlog::debug("target.transform = {}", target.transform);
+    if (transform >= 1 && transform <= 3)
+        m_screenshot = rotate_rgba(m_screenshot, 4 - transform);  // swap 1 (90) and 3 (270)
+
+    const Result<ImTextureRef>& r = CreateTexture(reinterpret_cast<void*>(static_cast<size_t>(m_texture_id._TexID)),
+                                                  m_screenshot.view(),
+                                                  m_screenshot.w,
+                                                  m_screenshot.h);
+    TRY_MSG(r, "Failed to recreate texture after crop: {}");
+    m_texture_id = r.get();
+
+    UpdateWindowBg();  // re-center image_origin/image_end for the new, smaller size
+
+    return Ok();
 }
 
 ImFont* ScreenshotTool::CacheAndGetFont(const std::string& font_path, const float font_size)

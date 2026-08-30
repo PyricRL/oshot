@@ -121,6 +121,7 @@ enum class SubWindow : size_t
     ManagePlugins,
     UninstallPlugins,
     Logs,
+    OutputMenuSelection,
     COUNT
 };
 
@@ -318,6 +319,7 @@ public:
     Result<>             StartWindow();
     Result<ImTextureRef> CreateTexture(void* tex, std::span<const uint8_t> data, int w, int h);
     bool                 OpenImage(const std::string& path);
+    Result<>             CropToOutput(const std::deque<region_t>& layout, const monitor_t& target, int transform = 0);
     bool                 IsActive() const { return m_state != ToolState::Idle; }
     capture_result_t&    GetRawScreenshot() { return m_screenshot; }
     void                 SetBackendTexture(void* tex) { m_texture_id._TexID = static_cast<ImTextureID>(size_t(tex)); }
@@ -431,6 +433,8 @@ private:
 
     std::function<void(SavingOp, const capture_result_t&, ImageExt)> m_on_complete;
 
+    std::deque<monitor_t>                          m_wayland_monitors;
+    SessionType                                    m_session;
     std::string                                    m_last_scanned_ocr_path;
     GeneralContext<SubWindow>                      m_show_window;
     GeneralContext<CurrentAction>                  m_current_actions;
@@ -479,6 +483,8 @@ private:
     void DrawPreferencesWindow();
     void DrawDownloadOCRWindow();
     void DrawLogsWindow();
+
+    void DrawOutputMenuSelection();
 
 #ifndef DISABLE_PLUGINS
     void DrawManagePluginsWindow();

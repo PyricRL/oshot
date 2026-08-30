@@ -352,7 +352,7 @@ Result<> ScreenshotTool::Start()
         if (m_session == SessionType::Wayland)
         {
             m_wayland_monitors = wl_get_monitors();
-            if (m_wayland_monitors.size() > 0)
+            if (m_wayland_monitors.size() > 1)
                 m_show_window.Set(SubWindow::OutputMenuSelection);
         }
 #endif

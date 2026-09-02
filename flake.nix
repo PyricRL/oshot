@@ -10,12 +10,12 @@
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
       version = "0.5.0-rc1";
-    in
-    {
-      packages.${system} = {
-        oshot = pkgs.stdenv.mkDerivation {
-          pname = "oshot";
+
+      mkOshot = { disablePlugins ? false }:
+        pkgs.stdenv.mkDerivation {
+          pname = if disablePlugins then "oshot-no-plugins" else "oshot";
           inherit version;
+
           src = ./.;
 
           nativeBuildInputs = with pkgs; [
@@ -44,27 +44,26 @@
             systemd
             libarchive
             curl
+            sysprof
           ];
-
-          preBuild = ''
-            export HASH="nix-build"
-            export BRANCH="nix"
-            export MESSAGE="built by nix"
-            export DATE="1970-01-01"
-            export DIRTY="clean"
-            export TAG="${version}"
-            export COMMITS="0"
-
-            ./scripts/generateVersion.sh
-          '';
 
           cmakeFlags = [
             "-DCMAKE_BUILD_TYPE=Release"
+            "-DDISABLE_PLUGINS=${if disablePlugins then "ON" else "OFF"}"
           ];
 
           installPhase = ''
             cmake --install . --prefix "$out"
           '';
+        };
+    in {
+      packages.${system} = {
+        oshot = mkOshot {
+          disablePlugins = false;
+        };
+
+        oshot-no-plugins = mkOshot {
+          disablePlugins = true;
         };
 
         default = self.packages.${system}.oshot;

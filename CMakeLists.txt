@@ -275,6 +275,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 add_library(oshot_common ${OSHOT_COMMON_LIB_TYPE} ${OSHOT_COMMON_SOURCES})
+add_dependencies(oshot_common generate_version)
 
 if(OSHOT_OPTION_DEFINITIONS)
     target_compile_definitions(oshot_common PUBLIC ${OSHOT_OPTION_DEFINITIONS})

@@ -13,7 +13,7 @@
 
       mkOshot = { disablePlugins ? false }:
         pkgs.stdenv.mkDerivation {
-          pname = if disablePlugins then "oshot-no-plugins" else "oshot";
+          pname = if disablePlugins then "oshot" else "oshot-plugins";
           inherit version;
 
           src = ./.;
@@ -58,11 +58,11 @@
         };
     in {
       packages.${system} = {
-        oshot = mkOshot {
+        oshot-plugins = mkOshot {
           disablePlugins = false;
         };
 
-        oshot-no-plugins = mkOshot {
+        oshot = mkOshot {
           disablePlugins = true;
         };
 

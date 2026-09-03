@@ -54,6 +54,9 @@
 
           installPhase = ''
             cmake --install . --prefix "$out"
+
+            # Write tesseract path to file
+            printf 'ocr-path = "${pkgs.tesseract}/bin/tesseract"' > "$out/oshot-config.toml"
           '';
         };
     in {

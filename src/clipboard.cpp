@@ -36,6 +36,8 @@
 #if OSHOT_LINUX
 #  include <sys/wait.h>
 #  include <unistd.h>
+
+#  include <csignal>
 #endif
 
 // Starts wlcopy/xclip in the background, forgetting it.
@@ -44,6 +46,8 @@ Result<int> start_linux_copy(SessionType session, const std::string_view mime_ty
 {
 #if OSHOT_LINUX
     static pid_t clip_pid = -1;
+
+    signal(SIGPIPE, SIG_IGN);
 
     // stop if already launched wlcopy
     if (clip_pid > 0)
@@ -108,6 +112,8 @@ Result<> Clipboard::CopyText(const std::string& text)
         if (write(fd, text.c_str(), text.size()) == -1)
         {
             close(fd);
+            if (errno == EPIPE)
+                return Err("Failed to copy text: clipboard tool not found or exited unexpectedly");
             return Err("Failed to copy text: {}", strerror(errno));
         }
 
@@ -137,6 +143,8 @@ Result<> Clipboard::CopyImage(const capture_result_t& cap, ImageExt ext)
         if (write(fd, reinterpret_cast<const char*>(png.data()), png.size()) == -1)
         {
             close(fd);
+            if (errno == EPIPE)
+                return Err("Failed to copy image: clipboard tool not found or exited unexpectedly");
             return Err("Failed to write image to stdin: {}", strerror(errno));
         }
 

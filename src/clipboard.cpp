@@ -47,6 +47,10 @@ Result<int> start_linux_copy(SessionType session, const std::string_view mime_ty
 #if OSHOT_LINUX
     static pid_t clip_pid = -1;
 
+    const char* tool = (session == SessionType::Wayland) ? "wl-copy" : "xclip";
+    if (which(tool) == UNKNOWN)
+        return Err("{} not found in PATH, please install it to enable clipboard support", tool);
+
     signal(SIGPIPE, SIG_IGN);
 
     // stop if already launched wlcopy
@@ -74,13 +78,13 @@ Result<int> start_linux_copy(SessionType session, const std::string_view mime_ty
 
         if (session == SessionType::Wayland)
         {
-            const char* args[] = { "wl-copy", "--foreground", "--type", mime_type.data(), nullptr };
-            execvp("wl-copy", const_cast<char* const*>(args));
+            const char* args[] = { tool, "--foreground", "--type", mime_type.data(), nullptr };
+            execvp(tool, const_cast<char* const*>(args));
         }
         else
         {
-            const char* args[] = { "xclip", "-selection", "clipboard", "-t", mime_type.data(), "-i", nullptr };
-            execvp("xclip", const_cast<char* const*>(args));
+            const char* args[] = { tool, "-selection", "clipboard", "-t", mime_type.data(), "-i", nullptr };
+            execvp(tool, const_cast<char* const*>(args));
         }
 
         exit(-1);

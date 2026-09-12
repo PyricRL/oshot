@@ -214,6 +214,19 @@ int get_screen_dpi()
 }
 #endif
 
+std::vector<std::string> split(const std::string_view text, const char delim)
+{
+    std::string              line;
+    std::vector<std::string> vec;
+    std::stringstream        ss(text.data());
+    while (std::getline(ss, line, delim))
+    {
+        vec.push_back(line);
+    }
+
+    return vec;
+}
+
 std::vector<uint8_t> encode_to_image(const capture_result_t& cap, ImageExt ext)
 {
     std::vector<uint8_t> out;
@@ -272,6 +285,36 @@ void fit_to_screen(capture_result_t& img)
     img.data = std::move(resized);
     img.w    = new_w;
     img.h    = new_h;
+}
+
+std::string get_relative_path(const std::string_view relative_path, const std::string_view env, const long long mode)
+{
+    const char* c_env = std::getenv(env.data());
+    if (!c_env)
+        return UNKNOWN;
+
+    struct stat sb;
+    std::string fullPath;
+    fullPath.reserve(1024);
+
+    for (const std::string& dir : split(c_env, ':'))
+    {
+        // -300ns for not creating a string. stonks
+        fullPath += dir;
+        fullPath += '/';
+        fullPath += relative_path.data();
+        if ((stat(fullPath.c_str(), &sb) == 0) && sb.st_mode & mode)
+            return fullPath.c_str();
+
+        fullPath.clear();
+    }
+
+    return UNKNOWN;  // not found
+}
+
+std::string which(const std::string_view command)
+{
+    return get_relative_path(command, "PATH", S_IXUSR);
 }
 
 static std::vector<uint8_t> read_stdin_binary()

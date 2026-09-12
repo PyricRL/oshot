@@ -376,6 +376,8 @@ std::string replace_str(std::string& str, const std::string_view from, const std
 std::string select_image();
 std::string expand_var(std::string ret);
 std::string col_to_hexstr(const rgba_t& col);
+std::string get_relative_path(const std::string_view relative_path, const std::string_view env, const long long mode);
+std::string which(const std::string_view command);
 
 bool acquire_tray_lock();
 bool is_system_dark_mode();

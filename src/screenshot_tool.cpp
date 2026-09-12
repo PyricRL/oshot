@@ -60,7 +60,6 @@
 #  define ZBAR_OUTPUT "barcode_output"
 #endif
 #include "screen_capture.hpp"
-#include "spdlog/sinks/ringbuffer_sink.h"
 #include "tiny-process-library/process.hpp"
 #include "tinyfiledialogs.h"
 #include "tool_icons.h"
@@ -97,13 +96,13 @@ inline rgba_t blend(rgba_t src, rgba_t dst)
                    uint8_t(src.a + dst.a * ia) };
 }
 
-static void get_filtered_filenames(const std::string&                          dir,
+static bool get_filtered_filenames(const std::string&                          dir,
                                    std::vector<std::string>&                   list,
                                    std::function<bool(const fs::path&)>        filter,
                                    std::function<std::string(const fs::path&)> value_push)
 {
     if (!fs::exists(dir))
-        return;
+        return false;
 
     for (const auto& entry : fs::recursive_directory_iterator(
              dir, fs::directory_options::follow_directory_symlink | fs::directory_options::skip_permission_denied))
@@ -111,6 +110,8 @@ static void get_filtered_filenames(const std::string&                          d
         if (filter(entry.path()))
             list.emplace_back(value_push(entry.path()));
     }
+
+    return true;
 }
 
 // https://github.com/pthom/imgui/blob/808272622f52d2f36124629c29994d2a5a7eb2f2/imgui_demo.cpp#L273
@@ -1547,6 +1548,29 @@ void ScreenshotTool::DrawOcrTools()
     pop_error_label(need_to_scan, "Need to scan new directory");
     ImGui::SameLine();
     HelpMarker("Full path to the OCR models (.traineddata). Supports drag-and-drop");
+
+    if (invalid_path)
+    {
+        ImGui::Spacing();
+        ImGui::TextColored(rgba_t(0x0AEFFFF).to_imvec4(), "Suggestions:");
+        ImGui::Indent();
+
+        if (g_is_nix)
+        {
+            ImGui::TextWrapped(
+                "Run the following command in your terminal, then update the OCR path in the Preferences window:");
+            ImGui::TextColored(rgba_t(0xFFCC33FF).to_imvec4(),
+                               "nix build --no-link --print-out-paths nixpkgs#tesseract");
+            CreateCopyTextButton("nix build --no-link --print-out-paths nixpkgs#tesseract", "Copy command");
+            ImGui::Spacing();
+        }
+
+#if !OSHOT_WINDOWS
+        ImGui::BulletText("Install one of the tesseract language packages (e.g. tesseract-data-eng).");
+#endif
+        ImGui::BulletText("Download a tesseract language model via 'Tools -> Download OCR Model'.");
+        ImGui::Unindent();
+    }
 
     // --- Model combo (only shown when path is valid and isn't changed) ---
     if (!invalid_path && !need_to_scan)
@@ -4170,12 +4194,12 @@ ImFont* ScreenshotTool::CacheAndGetFont(const std::string& font_path, const floa
     return font;
 }
 
-void ScreenshotTool::CreateCopyTextButton(const std::string& text_copy)
+void ScreenshotTool::CreateCopyTextButton(const std::string& text_copy, const std::string_view label1)
 {
     ErrorContext<GeneralError>& ectx = m_general_errors;
 
     static bool armed = false;
-    if (create_timed_button("Copy Text", "Copied!", armed))
+    if (create_timed_button(label1, "Copied!", armed))
     {
         const Result<>& res = g_clipboard.CopyText(text_copy);
         if (res.ok())
@@ -4221,11 +4245,16 @@ void ScreenshotTool::RefreshOcrModels()
         return;
     }
 
-    get_filtered_filenames(
-        m_inputs.ocr_path,
-        m_ocr_models_list,
-        [](const fs::path& entry) { return entry.extension().string() == ".traineddata"; },
-        [](const fs::path& entry) { return entry.stem().string(); });
+    // Path doesn't exist
+    if (!get_filtered_filenames(
+            m_inputs.ocr_path,
+            m_ocr_models_list,
+            [](const fs::path& entry) { return entry.extension().string() == ".traineddata"; },
+            [](const fs::path& entry) { return entry.stem().string(); }))
+    {
+        m_ocr_models_list.clear();
+    }
+
     m_last_scanned_ocr_path = m_inputs.ocr_path;
     ClearError(ectx, OcrError::NeedToScanDir);
 

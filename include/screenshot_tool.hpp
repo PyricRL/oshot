@@ -460,7 +460,7 @@ private:
     std::vector<install_node_t>             m_install_events;
 #endif
 
-    void CreateCopyTextButton(const std::string& text);
+    void CreateCopyTextButton(const std::string& text_copy, const std::string_view label1 = "Copy Text");
     void RefreshOcrModels();
     void NormalizeSelection();
     void SyncRuntimeFromConfig();

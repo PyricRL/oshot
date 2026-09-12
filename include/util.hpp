@@ -351,6 +351,7 @@ extern bool g_is_systray;  // old g_is_clipboard_server;
 extern int  g_sock;
 extern char g_sock_path[100];
 extern int  g_scr_w, g_scr_h;
+extern bool g_is_nix;
 
 extern std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> g_imgui_log_sink;
 

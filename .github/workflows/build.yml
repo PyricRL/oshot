@@ -7,7 +7,7 @@ on:
   pull_request:
 
 env:
-  HOMEBREW_NO_BUILD_FROM_SOURCE: 1
+  HOMEBREW_NO_BOTTLE_SOURCE_FALLBACK: 1
   MODELS_URL_RAW: "https://github.com/tesseract-ocr/tessdata/raw/main"
   BUILD_TYPE: ${{ startsWith(github.ref, 'refs/tags/v') && 'Release' || 'Debug' }}
 

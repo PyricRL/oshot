@@ -62,7 +62,7 @@ bool is_platform_supported(const plugin_t& plugin)
 {
     if (plugin.platforms.empty() || plugin.platforms.at(0) == "all")
         return true;
-    return std::find(plugin.platforms.begin(), plugin.platforms.end(), OSHOT_PLATFORM) != plugin.platforms.end();
+    return std::ranges::find(plugin.platforms, OSHOT_PLATFORM) != plugin.platforms.end();
 }
 
 bool looks_like_git_url(const std::string& source)
@@ -341,7 +341,7 @@ Result<> PluginManager::RemoveRepo(const std::string& repo_name)
     if (ec)
         return Err("Failed to remove plugin repository config path '{}'", (m_config_path / repo_name).string());
 
-    auto it = std::find_if(repos.begin(), repos.end(), [&](const manifest_t& m) { return m.name == repo_name; });
+    auto it = std::ranges::find_if(repos, [&](const manifest_t& m) { return m.name == repo_name; });
     if (it != repos.end())
     {
         for (const plugin_t& pl : it->plugins)
@@ -443,7 +443,7 @@ Result<> PluginManager::InstallAllPlugins(const manifest_t&               repo,
 
     for (const plugin_t& plugin : repo.plugins)
     {
-        if (std::find(skipped.begin(), skipped.end(), plugin.name) != skipped.end())
+        if (std::ranges::find(skipped, plugin.name) != skipped.end())
             continue;
 
         const fs::path manifest_config_path = m_config_path / plugin.id;

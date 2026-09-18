@@ -1,7 +1,6 @@
-#include <stdlib.h>
-#include <string.h>
 #include <wayland-client.h>
 
+#include <cstring>
 #include <deque>
 
 #include "screen_capture.hpp"
@@ -19,16 +18,16 @@ static zxdg_output_manager_v1* s_xdg_output_manager = nullptr;
 
 static void xdg_output_logical_position(void* data, zxdg_output_v1*, int32_t x, int32_t y)
 {
-    monitor_t* m = reinterpret_cast<monitor_t*>(data);
-    m->geo.x     = x;
-    m->geo.y     = y;
+    auto* m  = reinterpret_cast<monitor_t*>(data);
+    m->geo.x = x;
+    m->geo.y = y;
 }
 
 static void xdg_output_logical_size(void* data, zxdg_output_v1*, int32_t w, int32_t h)
 {
-    monitor_t* m = reinterpret_cast<monitor_t*>(data);
-    m->geo.w     = w;
-    m->geo.h     = h;
+    auto* m  = reinterpret_cast<monitor_t*>(data);
+    m->geo.w = w;
+    m->geo.h = h;
 }
 
 static void xdg_output_done(void*, zxdg_output_v1*)
@@ -38,11 +37,11 @@ static void xdg_output_name(void*, zxdg_output_v1*, const char*)
 static void xdg_output_description(void*, zxdg_output_v1*, const char*)
 {}
 
-static const zxdg_output_v1_listener xdg_output_listener = { xdg_output_logical_position,
-                                                             xdg_output_logical_size,
-                                                             xdg_output_done,
-                                                             xdg_output_name,
-                                                             xdg_output_description };
+static const zxdg_output_v1_listener xdg_output_listener = { .logical_position = xdg_output_logical_position,
+                                                             .logical_size     = xdg_output_logical_size,
+                                                             .done             = xdg_output_done,
+                                                             .name             = xdg_output_name,
+                                                             .description      = xdg_output_description };
 
 static void output_geometry(void*       data,
                             wl_output*  wl_output,
@@ -55,7 +54,7 @@ static void output_geometry(void*       data,
                             const char* model,
                             int32_t     transform)
 {
-    monitor_t* m = reinterpret_cast<monitor_t*>(data);
+    auto* m      = reinterpret_cast<monitor_t*>(data);
     m->geo.x     = x;
     m->geo.y     = y;
     m->transform = transform;
@@ -65,9 +64,9 @@ static void output_mode(void* data, wl_output* wl_output, uint32_t flags, int32_
 {
     if (flags & WL_OUTPUT_MODE_CURRENT)
     {
-        monitor_t* m = reinterpret_cast<monitor_t*>(data);
-        m->geo.w     = w;
-        m->geo.h     = h;
+        auto* m  = reinterpret_cast<monitor_t*>(data);
+        m->geo.w = w;
+        m->geo.h = h;
     }
 }
 
@@ -81,21 +80,25 @@ static void output_scale(void* data, wl_output* wl_output, int32_t factor)
 
 static void output_name(void* data, wl_output* wl_output, const char* name)
 {
-    char* monitor_name = reinterpret_cast<monitor_t*>(data)->name;
+    char* monitor_name = reinterpret_cast<monitor_t*>(data)->name.data();
     strncpy(monitor_name, name, 63);
 }
 
 static void output_description(void* data, wl_output* wl_output, const char* d)
 {}
 
-static const wl_output_listener output_listener = { output_geometry, output_mode, output_done,
-                                                    output_scale,    output_name, output_description };
+static const wl_output_listener output_listener = { .geometry    = output_geometry,
+                                                    .mode        = output_mode,
+                                                    .done        = output_done,
+                                                    .scale       = output_scale,
+                                                    .name        = output_name,
+                                                    .description = output_description };
 
 static void registry_global(void*, wl_registry* registry, uint32_t name, const char* interface, uint32_t version)
 {
     if (strcmp(interface, wl_output_interface.name) == 0)
     {
-        wl_output* output = reinterpret_cast<wl_output*>(
+        auto* output = reinterpret_cast<wl_output*>(
             wl_registry_bind(registry, name, &wl_output_interface, version < 4 ? version : 4));
 
         monitor_t& m = monitors.emplace_back();
@@ -112,7 +115,8 @@ static void registry_global(void*, wl_registry* registry, uint32_t name, const c
 static void registry_global_remove(void* data, wl_registry* registry, uint32_t name)
 {}
 
-static const wl_registry_listener registry_listener = { registry_global, registry_global_remove };
+static const wl_registry_listener registry_listener = { .global        = registry_global,
+                                                        .global_remove = registry_global_remove };
 
 std::deque<monitor_t> wl_get_monitors()
 {

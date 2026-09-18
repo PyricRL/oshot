@@ -49,7 +49,7 @@
 #include "getopt_port/getopt.h"
 // clang-format on
 
-enum OPs
+enum OPs : std::uint8_t
 {
     NONE,
     INSTALL,
@@ -103,6 +103,7 @@ void help_list(int invalid_opt = false)
     std::exit(invalid_opt);
 }
 
+// NOLINTBEGIN
 bool parse_install_args(int argc, char* argv[])
 {
     // clang-format off
@@ -246,6 +247,7 @@ static bool parseargs(int argc, char* argv[])
 
     return true;
 }
+// NOLINTEND
 
 static void switch_plugin_path(const std::string&     arg,
                                fs::path&              base_path,
@@ -354,7 +356,7 @@ void list_all_plugins(const StateManager& state)
                     continue;
 
                 for (fs::path base_path : TomlAPI(*plugin_tbl).GetValueArrayStr("libraries", {}))
-                    if (fs::exists(base_path += ".disabled"))
+                    if (fs::exists(base_path.append(".disabled")))
                         return true;
             }
         }

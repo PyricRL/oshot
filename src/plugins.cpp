@@ -88,7 +88,7 @@ static void load_plugin_path(const fs::path& path)
                                                     plugin->id,
                                                     fmt::format("plugins.{}.", plugin->id),
                                                     std::move(plugin_config_dir),
-                                                    std::move(path),
+                                                    path,
                                                     plugin,
                                                     nullptr,  // state filled in below
                                                     is_enabled,

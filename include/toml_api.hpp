@@ -30,13 +30,14 @@
 #include <fstream>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 
 #include "util.hpp"
 
 #define TOML_HEADER_ONLY 0
 #include "toml++/toml.hpp"
 
-enum class ValueType
+enum class ValueType : std::uint8_t
 {
     kNone,
     String,
@@ -244,25 +245,28 @@ public:
         m_overrides[key] = std::move(o);
     }
 
-    std::vector<std::string> GetValueArrayStr(const std::string_view          value,
-                                              const std::vector<std::string>& fallback) const
+    [[nodiscard]] std::vector<std::string> GetValueArrayStr(const std::string_view          value,
+                                                            const std::vector<std::string>& fallback) const
     {
         return GetValueArrayStrIntern(m_tbl.at_path(value).as_array(), fallback);
     }
 
-    std::vector<std::string> GetValueArrayStr(const std::string_view          name,
-                                              const std::string_view          key,
-                                              const std::vector<std::string>& fallback) const
+    [[nodiscard]] std::vector<std::string> GetValueArrayStr(const std::string_view          name,
+                                                            const std::string_view          key,
+                                                            const std::vector<std::string>& fallback) const
     {
         return GetValueArrayStrIntern(m_tbl[name][key].as_array(), fallback);
     }
 
-    toml::table&       GetTbl() { return m_tbl; }
-    const toml::table& GetTbl() const { return m_tbl; }
-    const toml::array* GetValueArray(const std::string_view value) const { return m_tbl.at_path(value).as_array(); }
+    toml::table&                     GetTbl() { return m_tbl; }
+    [[nodiscard]] const toml::table& GetTbl() const { return m_tbl; }
+    [[nodiscard]] const toml::array* GetValueArray(const std::string_view value) const
+    {
+        return m_tbl.at_path(value).as_array();
+    }
 
 protected:
-    virtual std::string BuildKey(const std::string_view key) const { return std::string(key); }
+    [[nodiscard]] virtual std::string BuildKey(const std::string_view key) const { return std::string(key); }
 
     toml::table m_tbl;
 
@@ -322,7 +326,7 @@ private:
             ret.reserve(array_it->size());
             array_it->for_each([&](auto&& el) {
                 if (const toml::value<std::string>* str_elem = el.as_string())
-                    ret.push_back((*str_elem)->data());
+                    ret.emplace_back((*str_elem)->data());
             });
 
             return ret;

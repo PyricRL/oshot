@@ -52,7 +52,7 @@
 #  include "plugin_manager.hh"
 #endif
 
-enum class ToolType : size_t
+enum class ToolType : std::uint8_t
 {
     kNone,
     Arrow,
@@ -71,7 +71,7 @@ enum class ToolType : size_t
     COUNT
 };
 
-enum class ToolState : size_t
+enum class ToolState : std::uint8_t
 {
     Idle,
     Capturing,
@@ -81,7 +81,7 @@ enum class ToolState : size_t
     AnnResizing,
 };
 
-enum class HandleHovered
+enum class HandleHovered : std::uint8_t
 {
     kNone,
     Top,
@@ -95,7 +95,7 @@ enum class HandleHovered
     Move
 };
 
-enum class InputOwner
+enum class InputOwner : std::uint8_t
 {
     kNone,
     Selection,
@@ -103,7 +103,7 @@ enum class InputOwner
     Tools
 };
 
-enum class PrefTab
+enum class PrefTab : std::int8_t
 {
     kNone    = -1,
     Defaults = 0,
@@ -113,7 +113,7 @@ enum class PrefTab
     Theme
 };
 
-enum class SubWindow : size_t
+enum class SubWindow : std::uint8_t
 {
     OcrDownload,
     About,
@@ -129,14 +129,14 @@ enum class SubWindow : size_t
 };
 
 // Used for config.hpp
-enum class ColorPickerAlpha
+enum class ColorPickerAlpha : std::uint8_t
 {
     Disabled,  // alpha channel is not editable
     Inline,    // alpha editable via the picker's inline slider
     Bar,       // alpha editable via a dedicated alpha bar, too
 };
 
-enum class CurrentAction
+enum class CurrentAction : std::uint8_t
 {
     IsDrawing,
     IsColorPicking,
@@ -144,7 +144,7 @@ enum class CurrentAction
     COUNT
 };
 
-enum class OcrDownloadError : size_t
+enum class OcrDownloadError : std::uint8_t
 {
     InvalidRepo,
     InvalidPath,
@@ -152,7 +152,7 @@ enum class OcrDownloadError : size_t
     COUNT
 };
 
-enum class OcrError : size_t
+enum class OcrError : std::uint8_t
 {
     InvalidModel,
     InvalidPath,
@@ -161,13 +161,13 @@ enum class OcrError : size_t
     COUNT
 };
 
-enum class ZbarError : size_t
+enum class ZbarError : std::uint8_t
 {
     FailedToScan,
     COUNT,
 };
 
-enum class GeneralError : size_t
+enum class GeneralError : std::uint8_t
 {
     FailedToCopyText,
     COUNT,
@@ -184,10 +184,10 @@ struct selection_rect_t
     point_t start;
     point_t end;
 
-    float get_x() const { return std::min(start.x, end.x); }
-    float get_y() const { return std::min(start.y, end.y); }
-    float get_width() const { return std::abs(end.x - start.x); }
-    float get_height() const { return std::abs(end.y - start.y); }
+    [[nodiscard]] float get_x() const { return std::min(start.x, end.x); }
+    [[nodiscard]] float get_y() const { return std::min(start.y, end.y); }
+    [[nodiscard]] float get_width() const { return std::abs(end.x - start.x); }
+    [[nodiscard]] float get_height() const { return std::abs(end.y - start.y); }
 };
 
 struct annotation_t
@@ -224,7 +224,7 @@ struct inputs_results_t
 // worker thread, only ever read/cleared on the render thread.
 struct plugin_install_event_t
 {
-    enum class Kind
+    enum class Kind : std::uint8_t
     {
         Status,
         Success,
@@ -277,7 +277,7 @@ struct GeneralContext
 
     void Clear(Enum e) { flags.reset(idx(e)); }
 
-    bool Has(Enum e) const { return flags.test(idx(e)); }
+    [[nodiscard]] bool Has(Enum e) const { return flags.test(idx(e)); }
 
     template <typename... E>
     bool HasAny(E... e) const
@@ -303,7 +303,7 @@ struct ErrorContext : public GeneralContext<Enum>
         texts[idx(e)].clear();
     }
 
-    const std::string& Get(Enum e) const { return texts[idx(e)]; }
+    [[nodiscard]] const std::string& Get(Enum e) const { return texts[idx(e)]; }
 };
 
 class ScreenshotTool
@@ -320,10 +320,10 @@ public:
 
     Result<>             Start();
     Result<>             StartWindow();
-    Result<ImTextureRef> CreateTexture(void* tex, std::span<const uint8_t> data, int w, int h);
+    Result<ImTextureRef> CreateTexture(ImTextureID tex, std::span<const uint8_t> data, int w, int h);
     bool                 OpenImage(const std::string& path);
     Result<>             CropToOutput(const std::deque<region_t>& layout, const monitor_t& target, int transform = 0);
-    bool                 IsActive() const { return m_state != ToolState::Idle; }
+    [[nodiscard]] bool   IsActive() const { return m_state != ToolState::Idle; }
     capture_result_t&    GetRawScreenshot() { return m_screenshot; }
     void                 SetBackendTexture(void* tex) { m_texture_id._TexID = static_cast<ImTextureID>(size_t(tex)); }
     void                 SetToolTexture(ToolType type, void* tex)
@@ -331,16 +331,16 @@ public:
         m_tool_textures[idx(type)]._TexID = static_cast<ImTextureID>(size_t(tex));
     }
 
-    auto&       GetImGuiIDTexts() { return m_imgui_id_texts; }
-    const auto& GetImageTexture() const { return m_texture_id; }
+    auto&                     GetImGuiIDTexts() { return m_imgui_id_texts; }
+    [[nodiscard]] const auto& GetImageTexture() const { return m_texture_id; }
 
     void SetOnImageReload(std::function<void(const capture_result_t&)> fn) { m_on_image_reload = std::move(fn); }
 
-    capture_result_t GetFinalImage(bool is_text_tools = false);
-    region_t         GetActiveRegion() const;
+    capture_result_t       GetFinalImage(bool is_text_tools = false);
+    [[nodiscard]] region_t GetActiveRegion() const;
 
-    ImFont* CacheAndGetFont(const std::string& font_name, const float font_size);
-    ImFont* GetCachedFont(const std::string& font_path, const float font_size) const;
+    ImFont*               CacheAndGetFont(const std::string& font_name, const float font_size);
+    [[nodiscard]] ImFont* GetCachedFont(const std::string& font_path, const float font_size) const;
 
     void        RenderOverlay();
     void        Cancel();
@@ -370,13 +370,13 @@ public:
         return ctx.Has(e);
     }
 
-    void SetOnComplete(const auto& cb) { m_on_complete = std::move(cb); }
+    void SetOnComplete(const auto& cb) { m_on_complete = cb; }
 
     // Marks that the user asked to save/copy; the actual work is deferred
     // until FireOnComplete() is called after the frame has been rendered.
     void RequestComplete(SavingOp op) { m_completed_op = op; }
 
-    bool IsCompleted() const { return m_completed_op != SavingOp::kNone; }
+    [[nodiscard]] bool IsCompleted() const { return m_completed_op != SavingOp::kNone; }
 
     void FireOnComplete()
     {
@@ -385,7 +385,7 @@ public:
         m_completed_op = SavingOp::kNone;
     }
 
-    void SetOnCancel(const std::function<void()>& cb) { m_on_cancel = std::move(cb); }
+    void SetOnCancel(const std::function<void()>& cb) { m_on_cancel = cb; }
 
 private:
     struct font_cache_t
@@ -549,13 +549,13 @@ private:
     void UpdateCursor(const selection_info_t& sel);
     void UpdateWindowBg();
 
-    ImRect GetAnnotationBBox(const annotation_t& ann) const;
+    [[nodiscard]] ImRect GetAnnotationBBox(const annotation_t& ann) const;
 
     // GetAnnotationBBox() expanded by the same border padding DrawAnnotationResizeBorder()
     // draws with, so the resize handles you see and the ones you can actually
     // click line up exactly. Only used for Circle/CircleFilled/CounterBubble/Text;
     // Line/Arrow keep their raw, un-normalized start/end to preserve direction.
-    ImRect GetAnnotationHandleBox(const annotation_t& ann) const;
+    [[nodiscard]] ImRect GetAnnotationHandleBox(const annotation_t& ann) const;
 
     template <typename Enum>
     bool ShowIfError(const ErrorContext<Enum>& ctx, Enum e)

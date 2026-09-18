@@ -35,6 +35,8 @@
 #include "texts.hpp"
 #include "util.hpp"
 
+using std::find;
+
 Config::Config(const fs::path& configFile, const fs::path& configDir)
     : m_config_path(configFile.string()), m_config_dir_path(configDir.string())
 {
@@ -75,8 +77,8 @@ void Config::LoadConfigFile(const std::string& filename)
     File.allow_out_edit = GetValue<bool>("default.allow-edit-ocr", false);  // deprecated
     File.allow_out_edit = GetValue<bool>("default.allow-text-edit", File.allow_out_edit);
 
-    const char* t;
-    if (!File.pref_conf_to_env && (t = getenv("TESSDATA_PREFIX")))
+    const char* t = getenv("TESSDATA_PREFIX");
+    if (!File.pref_conf_to_env && t)
         File.ocr_path = t;
 
     File.image_out_type.first = str_toupper(GetValue<std::string>("default.image-out-ext", "PNG"));
@@ -94,7 +96,7 @@ void Config::LoadConfigFile(const std::string& filename)
                                                                    "PiB", "EiB",  "ZiB", "YiB", "KB",  "MB",  "GB",
                                                                    "TB",  "PB",   "EB",  "ZB",  "YB" };
     File.image_out_size_fmt = GetValue<std::string>("default.image-out-size-ind", "auto");
-    if (std::find(prefixes.begin(), prefixes.end(), File.image_out_size_fmt) == prefixes.end())
+    if (std::ranges::find(prefixes, File.image_out_size_fmt) == prefixes.end())
         File.image_out_size_fmt = "auto";
 
     {

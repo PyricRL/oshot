@@ -82,13 +82,18 @@ constexpr rgba_t::rgba_t(ImVec4 vec)
 
 constexpr ImVec4 rgba_t::to_imvec4() const
 {
-    return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
+    return { float(r) / 255.0f, float(g) / 255.0f, float(b) / 255.0f, float(a) / 255.0f };
+}
+
+constexpr rgba_t::operator ImVec4() const
+{
+    return to_imvec4();
 }
 
 inline rgba_t blend(rgba_t src, rgba_t dst)
 {
-    float a  = src.a / 255.0f;
-    float ia = 1.0f - a;
+    uint a  = src.a / 255;
+    uint ia = 1 - a;
 
     return rgba_t{ uint8_t(src.r * a + dst.r * ia),
                    uint8_t(src.g * a + dst.g * ia),
@@ -96,10 +101,10 @@ inline rgba_t blend(rgba_t src, rgba_t dst)
                    uint8_t(src.a + dst.a * ia) };
 }
 
-static bool get_filtered_filenames(const std::string&                          dir,
-                                   std::vector<std::string>&                   list,
-                                   std::function<bool(const fs::path&)>        filter,
-                                   std::function<std::string(const fs::path&)> value_push)
+static bool get_filtered_filenames(const std::string&                                 dir,
+                                   std::vector<std::string>&                          list,
+                                   const std::function<bool(const fs::path&)>&        filter,
+                                   const std::function<std::string(const fs::path&)>& value_push)
 {
     if (!fs::exists(dir))
         return false;
@@ -129,14 +134,14 @@ static void HelpMarker(const char* desc)
     }
 }
 
-static void draw_input_text_path(const char*                  label,
-                                 const char*                  input_id,
-                                 const bool                   is_file,
-                                 const char*                  filters[],
-                                 int                          filter_count,
-                                 const std::function<void()>& if_edited,
-                                 std::string&                 path,
-                                 ImGuiInputFlags              flags)
+template <size_t N>
+static void draw_input_text_path(const char*                      label,
+                                 const char*                      input_id,
+                                 const bool                       is_file,
+                                 const std::array<const char*, N> filters,
+                                 const std::function<void()>&     if_edited,
+                                 std::string&                     path,
+                                 ImGuiInputFlags                  flags)
 {
     auto handle_drop = [&]() {
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) && !g_dropped_paths.empty())
@@ -172,7 +177,8 @@ static void draw_input_text_path(const char*                  label,
 
         const char* dialog_path =
             !is_file ? tinyfd_selectFolderDialog("Open folder", nullptr)
-                     : tinyfd_openFileDialog("Open file", start_path.c_str(), filter_count, filters, nullptr, 0);
+                     : tinyfd_openFileDialog(
+                           "Open file", start_path.c_str(), int(filters.size()), filters.data(), nullptr, 0);
 
         maximize_window();
 
@@ -190,15 +196,15 @@ static void draw_input_text_path(const char*                  label,
     ImGui::TextUnformatted(label);
 }
 
-static void draw_input_text_file(const char*                  label,
-                                 const char*                  input_id,
-                                 const char*                  filters[],
-                                 int                          filter_count,
-                                 const std::function<void()>& if_edited,
-                                 std::string&                 path,
-                                 ImGuiInputFlags              flags = 0)
+template <size_t N>
+static void draw_input_text_file(const char*                      label,
+                                 const char*                      input_id,
+                                 const std::array<const char*, N> filters,
+                                 const std::function<void()>&     if_edited,
+                                 std::string&                     path,
+                                 ImGuiInputFlags                  flags = 0)
 {
-    draw_input_text_path(label, input_id, true, filters, filter_count, if_edited, path, flags);
+    draw_input_text_path<N>(label, input_id, true, filters, if_edited, path, flags);
 }
 
 static void draw_input_text_folder(const char*                  label,
@@ -207,7 +213,7 @@ static void draw_input_text_folder(const char*                  label,
                                    std::string&                 path,
                                    ImGuiInputFlags              flags = 0)
 {
-    draw_input_text_path(label, input_id, false, nullptr, 0, if_edited, path, flags);
+    draw_input_text_path<0>(label, input_id, false, {}, if_edited, path, flags);
 }
 
 static HandleHovered flip_handle_x(HandleHovered handle)
@@ -266,8 +272,9 @@ static bool create_timed_button(const std::string_view label1,
                                 bool&                  armed,  // caller controls arming
                                 const float            delay_secs = 1.5f)
 {
-    static float press_time = 0.0f;
-    const double now        = ImGui::GetTime();
+    static double press_time = 0.0f;
+
+    const double now = ImGui::GetTime();
     if (armed && now - press_time > delay_secs)
         armed = false;
 
@@ -379,7 +386,7 @@ Result<> ScreenshotTool::StartWindow()
 #if OSHOT_MACOS
         m_texture_id = ImTextureRef{};  // will be set by backend
 #else
-        const Result<ImTextureRef>& res = CreateTexture(nullptr, m_screenshot.view(), m_screenshot.w, m_screenshot.h);
+        const Result<ImTextureRef>& res = CreateTexture(0, m_screenshot.view(), m_screenshot.w, m_screenshot.h);
         TRY_MSG(res, "Failed to create openGL texture: {}");
 
         m_texture_id = res.get();
@@ -392,20 +399,20 @@ Result<> ScreenshotTool::StartWindow()
     std::call_once(plugins_loaded, [&] { load_plugins(m_plugin_manager.GetStateManager().GetAllRepos()); });
 #endif
 
-    m_inputs = { g_config->File.ocr_path,
-                 g_config->File.ocr_model,
-                 g_config->File.ocr_get_repo,
+    m_inputs = { .ocr_path          = g_config->File.ocr_path,
+                 .ocr_model         = g_config->File.ocr_model,
+                 .ocr_download_repo = g_config->File.ocr_get_repo,
 #if defined(__unix__) && !defined(__APPLE__)
-                 g_config->GetConfigDirPath() + DIR_SEP_STR "models",
+                 .ocr_model_downloaded_path = g_config->GetConfigDirPath() + DIR_SEP_STR "models",
 #else
-                 "./models",
+                 .ocr_model_downloaded_path = "./models",
 #endif
-                 {},
-                 "",
-                 {},
-                 "",
-                 "" };
-    m_current_color = (rgba_t(g_cache->GetValue(CacheEntry::AnnColor, 0xFF0000FF)));
+                 .ocr_results            = {},
+                 .barcode_text           = "",
+                 .zbar_scan_result       = {},
+                 .ann_font               = "",
+                 .resolved_ann_font_path = "" };
+    m_current_color = (rgba_t(g_cache->GetValue(CacheEntry::AnnColor, Colors::RED.to_rgba())));
 
     m_imgui_id_texts.insert_or_assign(OCR_OUTPUT, &m_inputs.ocr_results.data);
     m_imgui_id_texts.insert_or_assign(ZBAR_OUTPUT, &m_inputs.barcode_text);
@@ -419,33 +426,30 @@ Result<> ScreenshotTool::StartWindow()
 #if OSHOT_MACOS
     m_texture_id = ImTextureRef{};  // will be set by backend
 #else
-    const Result<ImTextureRef>& res = CreateTexture(nullptr, m_screenshot.view(), m_screenshot.w, m_screenshot.h);
+    const Result<ImTextureRef>& res = CreateTexture(0, m_screenshot.view(), m_screenshot.w, m_screenshot.h);
     TRY_MSG(res, "Failed to create openGL texture: {}");
 
     m_texture_id = res.get();
 
     // Since the creation of the screenshot texture was fine, suppose the other too
-    m_tool_textures[idx(ToolType::Rectangle)] =
-        CreateTexture(nullptr, ICON_SQUARE_RGBA, ICON_SQUARE_W, ICON_SQUARE_H).get();
+    m_tool_textures[idx(ToolType::Rectangle)] = CreateTexture(0, ICON_SQUARE_RGBA, ICON_SQUARE_W, ICON_SQUARE_H).get();
     m_tool_textures[idx(ToolType::RectangleFilled)] =
-        CreateTexture(nullptr, ICON_RECT_FILLED_RGBA, ICON_RECT_FILLED_W, ICON_RECT_FILLED_H).get();
+        CreateTexture(0, ICON_RECT_FILLED_RGBA, ICON_RECT_FILLED_W, ICON_RECT_FILLED_H).get();
     m_tool_textures[idx(ToolType::CircleFilled)] =
-        CreateTexture(nullptr, ICON_CIRCLE_FILLED_RGBA, ICON_CIRCLE_FILLED_W, ICON_CIRCLE_FILLED_H).get();
+        CreateTexture(0, ICON_CIRCLE_FILLED_RGBA, ICON_CIRCLE_FILLED_W, ICON_CIRCLE_FILLED_H).get();
     m_tool_textures[idx(ToolType::ToggleTextTools)] =
-        CreateTexture(nullptr, ICON_TEXT_TOOLS_RGBA, ICON_TEXT_TOOLS_W, ICON_TEXT_TOOLS_H).get();
-    m_tool_textures[idx(ToolType::Circle)] =
-        CreateTexture(nullptr, ICON_CIRCLE_RGBA, ICON_CIRCLE_W, ICON_CIRCLE_H).get();
+        CreateTexture(0, ICON_TEXT_TOOLS_RGBA, ICON_TEXT_TOOLS_W, ICON_TEXT_TOOLS_H).get();
+    m_tool_textures[idx(ToolType::Circle)] = CreateTexture(0, ICON_CIRCLE_RGBA, ICON_CIRCLE_W, ICON_CIRCLE_H).get();
     m_tool_textures[idx(ToolType::CounterBubble)] =
-        CreateTexture(nullptr, ICON_COUNTER_BUBBLE_RGBA, ICON_COUNTER_BUBBLE_W, ICON_COUNTER_BUBBLE_H).get();
-    m_tool_textures[idx(ToolType::Pencil)] =
-        CreateTexture(nullptr, ICON_PENCIL_RGBA, ICON_PENCIL_W, ICON_PENCIL_H).get();
+        CreateTexture(0, ICON_COUNTER_BUBBLE_RGBA, ICON_COUNTER_BUBBLE_W, ICON_COUNTER_BUBBLE_H).get();
+    m_tool_textures[idx(ToolType::Pencil)] = CreateTexture(0, ICON_PENCIL_RGBA, ICON_PENCIL_W, ICON_PENCIL_H).get();
 
-    m_tool_textures[idx(ToolType::Arrow)] = CreateTexture(nullptr, ICON_ARROW_RGBA, ICON_ARROW_W, ICON_ARROW_H).get();
-    m_tool_textures[idx(ToolType::Text)]  = CreateTexture(nullptr, ICON_TEXT_RGBA, ICON_TEXT_W, ICON_TEXT_H).get();
-    m_tool_textures[idx(ToolType::CopyImage)] = CreateTexture(nullptr, ICON_COPY_RGBA, ICON_COPY_W, ICON_COPY_H).get();
-    m_tool_textures[idx(ToolType::SaveImage)] = CreateTexture(nullptr, ICON_SAVE_RGBA, ICON_SAVE_W, ICON_SAVE_H).get();
-    m_tool_textures[idx(ToolType::Line)]      = CreateTexture(nullptr, ICON_LINE_RGBA, ICON_LINE_W, ICON_LINE_H).get();
-    m_tool_textures[idx(ToolType::Logo)] = CreateTexture(nullptr, OSHOT_LOGO_RGBA, OSHOT_LOGO_W, OSHOT_LOGO_H).get();
+    m_tool_textures[idx(ToolType::Arrow)]     = CreateTexture(0, ICON_ARROW_RGBA, ICON_ARROW_W, ICON_ARROW_H).get();
+    m_tool_textures[idx(ToolType::Text)]      = CreateTexture(0, ICON_TEXT_RGBA, ICON_TEXT_W, ICON_TEXT_H).get();
+    m_tool_textures[idx(ToolType::CopyImage)] = CreateTexture(0, ICON_COPY_RGBA, ICON_COPY_W, ICON_COPY_H).get();
+    m_tool_textures[idx(ToolType::SaveImage)] = CreateTexture(0, ICON_SAVE_RGBA, ICON_SAVE_W, ICON_SAVE_H).get();
+    m_tool_textures[idx(ToolType::Line)]      = CreateTexture(0, ICON_LINE_RGBA, ICON_LINE_W, ICON_LINE_H).get();
+    m_tool_textures[idx(ToolType::Logo)]      = CreateTexture(0, OSHOT_LOGO_RGBA, OSHOT_LOGO_W, OSHOT_LOGO_H).get();
 #endif
 
 #ifndef DISABLE_PLUGINS
@@ -513,9 +517,9 @@ void ScreenshotTool::RenderOverlay()
     {
         ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
         ImGui::Begin("##select_area", nullptr, minimal_win_flags);
-        ImGui::TextColored(ImVec4(0, 1, 0, 1), "Select an area");
-        ImGui::TextColored(ImVec4(0, 1, 1, 1), "Press Save/Copy for the full screenshot");
-        ImGui::TextColored(ImVec4(0, 1, 0.5f, 1), "CTRL+A for whole image selection");
+        ImGui::TextColored(Colors::GREEN, "Select an area");
+        ImGui::TextColored(Colors::CYAN, "Press Save/Copy for the full screenshot");
+        ImGui::TextColored((0x0077FFFF_rgba), "CTRL+A for whole image selection");
         ImGui::End();
     }
 
@@ -624,9 +628,9 @@ void ScreenshotTool::HandleShortcutsInput()
 
     if (ImGui::Shortcut(ImGuiKey_A | ImGuiMod_Ctrl, ImGuiInputFlags_RouteGlobal))
     {
-        m_main_sel.selection.start = point_t{ m_image_origin.x, m_image_origin.y };
-        m_main_sel.selection.end   = point_t{ m_image_origin.x + static_cast<float>(m_screenshot.w),
-                                              m_image_origin.y + static_cast<float>(m_screenshot.h) };
+        m_main_sel.selection.start = point_t{ .x = m_image_origin.x, .y = m_image_origin.y };
+        m_main_sel.selection.end   = point_t{ .x = m_image_origin.x + static_cast<float>(m_screenshot.w),
+                                              .y = m_image_origin.y + static_cast<float>(m_screenshot.h) };
         m_state                    = ToolState::Selected;
     }
 
@@ -693,7 +697,7 @@ void ScreenshotTool::HandleSelectionInput(selection_info_t& sel)
         // Start new selection if not an annotation one
         else if (!sel.is_ann)
         {
-            sel.selection.start = { mouse_pos.x, mouse_pos.y };
+            sel.selection.start = { .x = mouse_pos.x, .y = mouse_pos.y };
             sel.selection.end   = sel.selection.start;
             m_state             = ToolState::Selecting;
         }
@@ -704,7 +708,7 @@ void ScreenshotTool::HandleSelectionInput(selection_info_t& sel)
         if (m_state == sel.resizing_state)
             HandleResizeInput(sel);
         else  // ToolState::Selecting
-            sel.selection.end = { mouse_pos.x, mouse_pos.y };
+            sel.selection.end = { .x = mouse_pos.x, .y = mouse_pos.y };
     }
 
     if (m_input_owner == sel.main_input_owner && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
@@ -755,8 +759,8 @@ bool ScreenshotTool::HandleAnnotationSelectionInput()
                         // Sync from the same padded box that gets drawn, so the
                         // handles you see and the ones you can click line up.
                         const ImRect handle_box = GetAnnotationHandleBox(*ann);
-                        m_anno_sel.selection    = { { handle_box.Min.x, handle_box.Min.y },
-                                                    { handle_box.Max.x, handle_box.Max.y } };
+                        m_anno_sel.selection    = { .start = { .x = handle_box.Min.x, .y = handle_box.Min.y },
+                                                    .end   = { .x = handle_box.Max.x, .y = handle_box.Max.y } };
                         break;
                     }
 
@@ -764,13 +768,14 @@ bool ScreenshotTool::HandleAnnotationSelectionInput()
                         // Use the tight point-cloud bbox as the drag box; the
                         // actual geometry (ann.points) is transformed separately
                         // below, start/end are never read for drawing a pencil.
-                        m_anno_sel.selection = { { bbox.Min.x, bbox.Min.y }, { bbox.Max.x, bbox.Max.y } };
+                        m_anno_sel.selection = { .start = { .x = bbox.Min.x, .y = bbox.Min.y },
+                                                 .end   = { .x = bbox.Max.x, .y = bbox.Max.y } };
                         break;
 
                     default:  // Rectangle, RectangleFilled, Line, Arrow
                         // Keep native, direction-preserving start/end for dragging;
                         // only the *drawn border* uses the padded/normalized bbox.
-                        m_anno_sel.selection = { ann->start, ann->end };
+                        m_anno_sel.selection = { .start = ann->start, .end = ann->end };
                         break;
                 }
 
@@ -834,8 +839,8 @@ bool ScreenshotTool::HandleAnnotationSelectionInput()
                 const float     box_h   = sel_h - padding * 2.0f;
                 const float     radius  = std::min(box_w, box_h) * 0.5f;
 
-                ann->start = { box_x + box_w * 0.5f, box_y + box_h * 0.5f };
-                ann->end   = { ann->start.x + radius, ann->start.y };
+                ann->start = { .x = box_x + box_w * 0.5f, .y = box_y + box_h * 0.5f };
+                ann->end   = { .x = ann->start.x + radius, .y = ann->start.y };
                 break;
             }
 
@@ -847,7 +852,7 @@ bool ScreenshotTool::HandleAnnotationSelectionInput()
                 // handle will move it but won't resize the glyphs.
                 constexpr float PIXEL   = 1.0f;
                 const float     padding = ann->thickness - PIXEL;
-                ann->start              = { sel_x + padding, sel_y + padding };
+                ann->start              = { .x = sel_x + padding, .y = sel_y + padding };
                 break;
             }
 
@@ -981,7 +986,7 @@ void ScreenshotTool::HandleAnnotationInput()
         {
             m_current_actions.Set(CurrentAction::IsTextPlacing);
             m_current_annotation.type      = ToolType::Text;
-            m_current_annotation.start     = { mouse_pos.x, mouse_pos.y };
+            m_current_annotation.start     = { .x = mouse_pos.x, .y = mouse_pos.y };
             m_current_annotation.end       = m_current_annotation.start;
             m_current_annotation.color     = m_current_color;
             m_current_annotation.thickness = m_tool_thickness[idx(ToolType::Text)];
@@ -997,7 +1002,7 @@ void ScreenshotTool::HandleAnnotationInput()
             ImGui::SetNextWindowBgAlpha(0.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, padding_y));
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, Colors::BLACK);
 
             ImGui::Begin("##text_ann_input_win",
                          nullptr,
@@ -1052,7 +1057,7 @@ void ScreenshotTool::HandleAnnotationInput()
     {
         m_current_actions.Set(CurrentAction::IsDrawing);
         m_current_annotation.type      = m_current_tool;
-        m_current_annotation.start     = { mouse_pos.x, mouse_pos.y };
+        m_current_annotation.start     = { .x = mouse_pos.x, .y = mouse_pos.y };
         m_current_annotation.end       = m_current_annotation.start;
         m_current_annotation.color     = m_current_color;
         m_current_annotation.thickness = m_tool_thickness[idx(m_current_tool)];
@@ -1074,7 +1079,7 @@ void ScreenshotTool::HandleAnnotationInput()
 
     if (m_current_actions.Has(CurrentAction::IsDrawing) && ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
-        m_current_annotation.end = { mouse_pos.x, mouse_pos.y };
+        m_current_annotation.end = { .x = mouse_pos.x, .y = mouse_pos.y };
 
         if (m_current_tool == ToolType::Pencil)
         {
@@ -1085,7 +1090,7 @@ void ScreenshotTool::HandleAnnotationInput()
                 float          dx   = mouse_pos.x - last.x;
                 float          dy   = mouse_pos.y - last.y;
                 if (dx * dx + dy * dy > 4.0f)  // Minimum distance squared
-                    m_current_annotation.points.push_back({ mouse_pos.x, mouse_pos.y });
+                    m_current_annotation.points.push_back({ .x = mouse_pos.x, .y = mouse_pos.y });
             }
         }
     }
@@ -1131,8 +1136,8 @@ void ScreenshotTool::HandleColorPickerInput()
     constexpr float k_offset   = 15.0f;   // distance from cursor to loupe corner
     constexpr float k_win_size = k_loupe_px + k_padding * 2.0f;
 
-    constexpr uint32_t shadow_color      = rgba_t(0x000000B4).to_abgr();
-    constexpr uint32_t white_lines_color = rgba_t(0xffffffE6).to_abgr();
+    constexpr uint32_t shadow_color      = (0x000000B4_rgba).to_abgr();
+    constexpr uint32_t white_lines_color = (0xffffffE6_rgba).to_abgr();
 
     // Position loupe window: prefer bottom-right, flip to stay on screen
     const ImVec2& display = ImGui::GetIO().DisplaySize;
@@ -1206,26 +1211,26 @@ void ScreenshotTool::HandleColorPickerInput()
         dl->AddLine(ImVec2(ctr.x, ctr.y + gap), ImVec2(ctr.x, ctr.y + arm), white_lines_color, 1.0f);
         // Centre dot, filled with the hovered colour so it's always visible
         dl->AddCircleFilled(ctr, gap - 0.5f, c.to_abgr());
-        dl->AddCircle(ctr, gap - 0.5f, rgba_t(0xffffffC8).to_abgr(), 12, 1.0f);
+        dl->AddCircle(ctr, gap - 0.5f, (0xffffffC8_rgba).to_abgr(), 12, 1.0f);
 
         // Outline around the entire loupe image
         dl->AddRect(loupe_origin,
                     ImVec2(loupe_origin.x + k_loupe_px, loupe_origin.y + k_loupe_px),
-                    rgba_t(0x505050DC).to_abgr(),
+                    (0x505050DC_rgba).to_abgr(),
                     2.0f,
                     1.5f,
                     ImDrawFlags_None);
 
         ImGui::Spacing();
-        ImGui::ColorButton("##loupe_swatch", c.to_imvec4(), ImGuiColorEditFlags_NoPicker, ImVec2(32, 32));
+        ImGui::ColorButton("##loupe_swatch", c, ImGuiColorEditFlags_NoPicker, ImVec2(32, 32));
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::Text("#%02X%02X%02X", c.r, c.g, c.b);
-        ImGui::TextColored(ImVec4(1, 0, 0, 1), "%-3d ", c.r);
+        ImGui::TextColored(Colors::RED, "%-3d ", c.r);
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0, 1, 0, 1), "%-3d ", c.g);
+        ImGui::TextColored(Colors::GREEN, "%-3d ", c.g);
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0, 0, 1, 1), "%-3d", c.b);
+        ImGui::TextColored(Colors::BLUE, "%-3d", c.b);
         ImGui::EndGroup();
 
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
@@ -1243,7 +1248,7 @@ void ScreenshotTool::HandleColorPickerInput()
     {
         ImDrawList* fg = ImGui::GetForegroundDrawList();
         fg->AddCircle(mouse_pos, 5.0f, shadow_color, 12, 2.0f);
-        fg->AddCircleFilled(mouse_pos, 2.0f, rgba_t(0xffffffFF).to_abgr());
+        fg->AddCircleFilled(mouse_pos, 2.0f, Colors::WHITE.to_abgr());
     }
 
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsKeyPressed(ImGuiKey_Escape))
@@ -1324,7 +1329,7 @@ void ScreenshotTool::UpdateHandleHoverState(selection_info_t& sel)
 void ScreenshotTool::UpdateCursor(const selection_info_t& sel)
 {
     if (m_current_tool != ToolType::kNone)
-    {
+    {  // NOLINT
         ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
     }
     else if (sel.handle_hover != HandleHovered::kNone || sel.dragging_handle != HandleHovered::kNone)
@@ -1412,7 +1417,7 @@ void ScreenshotTool::DrawDarkOverlay()
     const float sel_w = m_main_sel.selection.get_width();
     const float sel_h = m_main_sel.selection.get_height();
 
-    constexpr ImU32 dark_color = rgba_t(0x00000080).to_abgr();
+    constexpr ImU32 dark_color = (0x00000080_rgba).to_abgr();
 
     // Top rectangle
     draw_list->AddRectFilled(m_image_origin, ImVec2(m_image_end.x, sel_y), dark_color);
@@ -1469,7 +1474,7 @@ void ScreenshotTool::DrawASelectionBorder(selection_info_t& sel,
     // Draw selection border
     draw_list->AddRect(ImVec2(sel_x, sel_y),
                        ImVec2(sel_x + sel_w, sel_y + sel_h),
-                       rgba_t(0x0096ffFF).to_abgr(),
+                       (0x0096ffFF_rgba).to_abgr(),
                        0.0f,
                        1.0f,
                        ImDrawFlags_None);
@@ -1483,12 +1488,12 @@ void ScreenshotTool::DrawASelectionBorder(selection_info_t& sel,
         ImVec2 min = ImVec2(pos.x - handle_draw, pos.y - handle_draw);
         ImVec2 max = ImVec2(pos.x + handle_draw, pos.y + handle_draw);
 
-        rgba_t color = rgba_t(0xffffffFF);
+        auto color = Colors::WHITE;
         if (sel.handle_hover == type || sel.dragging_handle == type)
             color.b = 0;  // Yellow
 
         draw_list->AddRectFilled(min, max, color.to_abgr());
-        draw_list->AddRect(min, max, rgba_t(0xffffffFF).to_abgr(), 0.0f, 2.0f, ImDrawFlags_None);
+        draw_list->AddRect(min, max, Colors::WHITE.to_abgr(), 0.0f, 2.0f, ImDrawFlags_None);
     };
 
     // Corner handles
@@ -1552,7 +1557,7 @@ void ScreenshotTool::DrawASelectionBorder(selection_info_t& sel,
             }
             byte_units_t byte_units =
                 (g_config->File.image_out_size_fmt == "auto")
-                    ? auto_divide_bytes(double(estimated_size.load()), 1024)
+                    ? auto_divide_bytes(double(estimated_size.load()), ByteUnit::Kibibyte)
                     : divide_bytes(double(estimated_size.load()), g_config->File.image_out_size_fmt);
 
             str += fmt::format(
@@ -1574,9 +1579,9 @@ void ScreenshotTool::DrawASelectionBorder(selection_info_t& sel,
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(kPaddingX, kPaddingY));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.06f, 0.06f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 0.25f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, (0x0F0F0FFF_rgba));
+        ImGui::PushStyleColor(ImGuiCol_Border, (0xFFFFFF40_rgba));
+        ImGui::PushStyleColor(ImGuiCol_Text, Colors::WHITE);
 
         if (ImGui::Begin("##selection_size_window",
                          nullptr,
@@ -1604,13 +1609,13 @@ void ScreenshotTool::DrawMenuItems()
             {
                 minimize_window();
 
-                const char* filter[]  = { "*.png", "*.jpeg", "*.jpg", "*.bmp" };
-                const char* open_path = tinyfd_openFileDialog("Open Image",
-                                                              "",        // default path
-                                                              4,         // number of filter patterns
-                                                              filter,    // file filters
-                                                              "Images",  // filter description
-                                                              false      // allow multiple selections
+                static constexpr auto filter    = std::to_array({ "*.png", "*.jpeg", "*.jpg", "*.bmp" });
+                const char*           open_path = tinyfd_openFileDialog("Open Image",
+                                                                        "",             // default path
+                                                                        filter.size(),  // number of filter patterns
+                                                                        filter.data(),  // file filters
+                                                                        "Images",       // filter description
+                                                                        false           // allow multiple selections
                 );
 
                 maximize_window();
@@ -1704,9 +1709,9 @@ void ScreenshotTool::DrawAboutWindow()
     ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("About", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings))
     {
-        std::string_view text_display;
-        const float      window_width  = ImGui::GetWindowSize().x;
-        auto             centered_text = [&](const std::string_view text) {
+        std::span<const char> text_display;
+        const float           window_width  = ImGui::GetWindowSize().x;
+        auto                  centered_text = [&](const std::span<const char> text) {
             float name_width = ImGui::CalcTextSize(text.data()).x;
             ImGui::SetCursorPosX((window_width - name_width) / 2);
             return text;
@@ -1727,7 +1732,7 @@ void ScreenshotTool::DrawAboutWindow()
 
 #ifdef DISABLE_PLUGINS
         text_display = centered_text("!!! NO PLUGINS SUPPORT !!!");
-        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%s", text_display.data());
+        ImGui::TextColored(Colors::RED, "%s", text_display.data());
         ImGui::Spacing();
 #endif
 
@@ -1773,14 +1778,14 @@ void ScreenshotTool::DrawOcrTools()
 
     auto push_error_style = [](bool cond) {
         if (cond)
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, Colors::RED);
     };
     auto pop_error_label = [](bool cond, const char* label) {
         if (cond)
         {
             ImGui::PopStyleColor();
             ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%s", label);
+            ImGui::TextColored(Colors::RED, "%s", label);
         }
     };
 
@@ -1798,7 +1803,7 @@ void ScreenshotTool::DrawOcrTools()
     if (need_to_scan && ImGui::Button("Scan"))
         RefreshOcrModels();
     ImGui::SameLine();
-    const auto& it    = std::find(m_ocr_models_list.begin(), m_ocr_models_list.end(), ocr_model);
+    const auto& it    = std::ranges::find(m_ocr_models_list, ocr_model);
     item_selected_idx = (it != m_ocr_models_list.end()) ? std::distance(m_ocr_models_list.begin(), it) : 0;
     pop_error_label(invalid_path, "Invalid!");
     pop_error_label(need_to_scan, "Need to scan new directory");
@@ -1808,16 +1813,16 @@ void ScreenshotTool::DrawOcrTools()
     if (invalid_path)
     {
         ImGui::Spacing();
-        ImGui::TextColored(rgba_t(0x0AEFFFF).to_imvec4(), "Suggestions:");
+        ImGui::TextColored((0x0AEFFFF_rgba), "Suggestions:");
         ImGui::Indent();
 
         if (g_is_nix)
         {
-            constexpr char cmd[] = "nix build --no-link --print-out-paths nixpkgs#tesseract";
+            constexpr std::span<const char> cmd = "nix build --no-link --print-out-paths nixpkgs#tesseract";
             ImGui::TextWrapped(
                 "Run the following command in your terminal, then update the OCR path in the Preferences window:");
-            ImGui::TextColored(rgba_t(0xFFCC33FF).to_imvec4(), cmd);
-            CreateCopyTextButton(cmd, "Copy command");
+            ImGui::TextColored((0xFFCC33FF_rgba), cmd.data());
+            CreateCopyTextButton(cmd.data(), "Copy command");
             ImGui::Spacing();
         }
 
@@ -1870,7 +1875,7 @@ void ScreenshotTool::DrawOcrTools()
         if (invalid_model)
         {
             ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Invalid!");
+            ImGui::TextColored(Colors::RED, "Invalid!");
         }
     }
 
@@ -1923,9 +1928,8 @@ void ScreenshotTool::DrawOcrTools()
         if (HasError(ectx, OcrError::FailedToOCR))
         {
             ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
-                               "Failed to initialize OCR: %s",
-                               GetError(ectx, OcrError::FailedToOCR).c_str());
+            ImGui::TextColored(
+                Colors::RED, "Failed to initialize OCR: %s", GetError(ectx, OcrError::FailedToOCR).c_str());
         }
         else
         {
@@ -1937,11 +1941,11 @@ void ScreenshotTool::DrawOcrTools()
         {
             ImGui::BulletText("Confidence:");
             ImGui::SameLine();
-            ImVec4 confidence_color(0.0f, 1.0f, 0.0f, 1.0f);  // green
+            ImVec4 confidence_color(Colors::GREEN);
             if (m_inputs.ocr_results.confidence <= 45)
-                confidence_color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);  // red
+                confidence_color = Colors::RED;
             else if (m_inputs.ocr_results.confidence <= 70)
-                confidence_color = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);  // yellow
+                confidence_color = Colors::YELLOW;
 
             ImGui::TextColored(confidence_color, "%d%%", m_inputs.ocr_results.confidence);
 
@@ -1970,7 +1974,7 @@ void ScreenshotTool::DrawBarDecodeTools()
 
     if (ImGui::Button("Extract Text"))
     {
-        const Result<zbar_result_t>& scan = m_zbar_api.ExtractTextsCapture(GetFinalImage(true));
+        Result<zbar_result_t> scan = m_zbar_api.ExtractTextsCapture(GetFinalImage(true));
         if (!scan.ok())
         {
             SetError(ectx, ZbarError::FailedToScan, scan.error_v());
@@ -1988,8 +1992,7 @@ void ScreenshotTool::DrawBarDecodeTools()
     if (HasError(ectx, ZbarError::FailedToScan))
     {
         ImGui::SameLine();
-        ImGui::TextColored(
-            ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Failed to decode: %s", GetError(ectx, ZbarError::FailedToScan).c_str());
+        ImGui::TextColored(Colors::RED, "Failed to decode: %s", GetError(ectx, ZbarError::FailedToScan).c_str());
     }
     else if (!m_inputs.zbar_scan_result.datas.empty() && ImGui::TreeNode("Details"))
     {
@@ -2050,7 +2053,7 @@ void ScreenshotTool::DrawAnnotationToolbar()
         const bool selected = (m_current_tool == tool);
 
         if (selected)
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.6f, 1.0f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Button, (0x6699FFFF_rgba));
 
         if (ImGui::ImageButton(id, texture.GetTexID(), ImVec2(24, 24)))
             m_current_tool = selected ? ToolType::kNone : tool;
@@ -2085,12 +2088,11 @@ void ScreenshotTool::DrawAnnotationToolbar()
                 ImGui::InputFloat("##fontsize", &m_tool_thickness[idx(m_current_tool)], 2.0f, 2.0f, "%.0f px");
                 ImGui::SameLine();
                 ImGui::TextUnformatted("Font Size");
-                static const char* font_filters[] = { "*.ttf", "*.otf", "*.woff", "*.woff2" };
+                static constexpr auto font_filters = std::to_array({ "*.ttf", "*.otf", "*.woff", "*.woff2" });
                 draw_input_text_file(
                     "Font name/path",
                     "##font_path_ann_settings",
                     font_filters,
-                    4,
                     [&] { m_inputs.resolved_ann_font_path = get_font_path(m_inputs.ann_font).string(); },
                     m_inputs.ann_font);
             }
@@ -2109,7 +2111,7 @@ void ScreenshotTool::DrawAnnotationToolbar()
             ImGui::SameLine();
             HelpMarker("Click anywhere on the image to pick a color");
 
-            ImVec4 picker = m_current_color.to_imvec4();
+            ImVec4 picker = m_current_color;
             ImGui::ColorPicker4("Color", reinterpret_cast<float*>(&picker), flags);
 
             m_current_color = rgba_t(picker);
@@ -2160,9 +2162,9 @@ void ScreenshotTool::DrawAnnotationToolbar()
 
 static void draw_preference_edit_config(const std::function<void()>& refresh_models_func, bool window_just_opened)
 {
-    static const char* image_prev_units[] = { "off", "auto", "B", "KiB", "MiB", "KB", "MB" };
-    static const char* font_filters[]     = { "*.ttf", "*.otf", "*.ttc", "*.woff", "*.woff2" };
-    static const char* toml_filters[]     = { "*.toml" };
+    static constexpr auto image_prev_units = std::to_array({ "off", "auto", "B", "KiB", "MiB", "KB", "MB" });
+    static constexpr auto font_filters     = std::to_array({ "*.ttf", "*.otf", "*.ttc", "*.woff", "*.woff2" });
+    static constexpr auto toml_filters     = std::to_array({ "*.toml" });
 
     static int                   image_ext_sel    = 0;
     static int                   image_preuni_sel = 0;
@@ -2214,7 +2216,6 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
         "",
         "##config_theme_file_path",
         toml_filters,
-        1,
         [&] {
             std::string& s = g_config->File.theme_file_path;
             if (fs::path(s).is_relative())
@@ -2222,7 +2223,7 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
         },
         g_config->File.theme_file_path);
     if (!fs::exists(g_config->File.theme_file_path))
-        ImGui::TextColored(rgba_t(0xff7444FF).to_imvec4(), "File doesn't exist, fallback to default hardcoded theme");
+        ImGui::TextColored((0xff7444FF_rgba), "File doesn't exist, fallback to default hardcoded theme");
     ImGui::Spacing();
 
     ImGui::Text("Color picker style");
@@ -2282,11 +2283,11 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
     {
         for (size_t i = 0; i < idx(ImageExt::COUNT); ++i)
         {
-            bool selected = (image_ext_sel == int(i));
+            bool selected = image_ext_sel == int(i);
 
             if (ImGui::Selectable(IMAGE_EXTS_STR[i].second, image_ext_sel))
             {
-                image_ext_sel                        = i;
+                image_ext_sel                        = int(i);
                 g_config->File.image_out_type.first  = IMAGE_EXTS_STR[i].second;
                 g_config->File.image_out_type.second = toe<ImageExt>(i);
             }
@@ -2304,13 +2305,13 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
     HelpMarker("Unit used to show the selection's estimated file size next to the selection border");
     if (ImGui::BeginCombo("##config_image_out_size_fmt", g_config->File.image_out_size_fmt.c_str()))
     {
-        for (int i = 0; i < IM_ARRAYSIZE(image_prev_units); ++i)
+        for (size_t i = 0; i < image_prev_units.size(); ++i)
         {
             bool selected = image_preuni_sel == int(i);
 
             if (ImGui::Selectable(image_prev_units[i], image_preuni_sel))
             {
-                image_preuni_sel                  = i;
+                image_preuni_sel                  = int(i);
                 g_config->File.image_out_size_fmt = image_prev_units[i];
             }
 
@@ -2331,7 +2332,7 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
         r = get_config_image_out_fmt();
 
     if (!r.ok())
-        ImGui::TextColored(ImVec4(1, 0, 0, 1), "%s", r.error_v().c_str());
+        ImGui::TextColored(Colors::RED, "%s", r.error_v().c_str());
     else
         ImGui::TextDisabled("%s", r.get().c_str());
 
@@ -2448,10 +2449,10 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
     ImGui::BeginChild("##font_list", ImVec2(0, list_height), true);
     for (size_t i = 0; i < fonts.size(); ++i)
     {
-        ImGui::PushID(static_cast<int>(i));
+        ImGui::PushID(int(i));
         if (ImGui::SmallButton("x"))
         {
-            fonts.erase(fonts.begin() + i);
+            fonts.erase(fonts.begin() + static_cast<ptrdiff_t>(i));
             rebuild_font_cache();  // invalidate
             ImGui::PopID();
             break;
@@ -2461,7 +2462,7 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
         ImGui::SameLine();
         const fs::path& fp = (i < resolved_font_paths.size()) ? resolved_font_paths[i] : fs::path{};
         if (fp.empty())
-            ImGui::TextColored(ImVec4(1.f, 0.4f, 0.4f, 1.f), "Font not found");
+            ImGui::TextColored((0xFF6666FF_rgba), "Font not found");
         else if (!fs::path(fonts[i]).is_absolute())
             ImGui::TextDisabled("Found in %s", fp.string().c_str());
         ImGui::PopID();
@@ -2480,11 +2481,11 @@ static void draw_preference_edit_config(const std::function<void()>& refresh_mod
         ImGui::SetKeyboardFocusHere(0);
         should_refocus = false;
     }
-    draw_input_text_file("", "##font_path", font_filters, 5, [&] {}, new_font, ImGuiInputTextFlags_EnterReturnsTrue);
+    draw_input_text_file("", "##font_path", font_filters, [&] {}, new_font, ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
     if (ImGui::Button("Add font"))
     {
-        if (!new_font.empty() && std::find(fonts.begin(), fonts.end(), new_font) == fonts.end())
+        if (!new_font.empty() && std::ranges::find(fonts, new_font) == fonts.end())
         {
             fonts.push_back(new_font);
             rebuild_font_cache();  // invalidate
@@ -2566,13 +2567,13 @@ static void draw_theme_editor()
 
     // We only show the most-used slots to keep the list manageable.
     // Full list is still editable via the config file directly.
-    static constexpr const char* important[] = {
+    static constexpr auto important = std::to_array({
         "Text",          "TextDisabled",  "WindowBg",       "ChildBg",       "PopupBg",       "Border",
         "PlotHistogram", "FrameBg",       "FrameBgHovered", "FrameBgActive", "TitleBg",       "TitleBgActive",
         "MenuBarBg",     "ScrollbarBg",   "ScrollbarGrab",  "CheckMark",     "SliderGrab",    "SliderGrabActive",
         "Button",        "ButtonHovered", "ButtonActive",   "Header",        "HeaderHovered", "HeaderActive",
         "Tab",           "TabHovered",    "TabSelected",
-    };
+    });
 
     const auto& cmap = color_name_map();
 
@@ -2623,9 +2624,9 @@ static void draw_theme_editor()
 void ScreenshotTool::DrawPreferencesWindow()
 {
 #ifndef DISABLE_PLUGINS
-    static constexpr const char* items[] = { "Defaults", "Plugins", "Theme" };
+    static constexpr auto items = std::to_array({ "Defaults", "Plugins", "Theme" });
 #else
-    static constexpr const char* items[] = { "Defaults", "Theme" };
+    static constexpr auto items = std::to_array({ "Defaults", "Theme" });
 #endif
 
     static bool    prefs_modified     = false;
@@ -2734,7 +2735,7 @@ void ScreenshotTool::DrawPreferencesWindow()
 
         // Left
         ImGui::BeginChild("##left_panel", ImVec2(150, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX);
-        for (int i = 0; i < IM_ARRAYSIZE(items); i++)
+        for (size_t i = 0; i < items.size(); i++)
             if (ImGui::Selectable(items[i], selected_tab == toe<PrefTab>(i)))
                 selected_tab = toe<PrefTab>(i);
         ImGui::EndChild();
@@ -2833,14 +2834,13 @@ void ScreenshotTool::DrawManagePluginsWindow()
     {
         if (m_install_state && m_install_state->running)
         {
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
-                               "An install is in progress, this list will refresh once it's done.");
+            ImGui::TextColored(Colors::RED, "An install is in progress, this list will refresh once it's done.");
             ImGui::End();
             m_show_window.Set(SubWindow::ManagePlugins, open);
             return;
         }
 
-        ImGui::PushStyleColor(ImGuiCol_Text, rgba_t(0x999999FF).to_imvec4());
+        ImGui::PushStyleColor(ImGuiCol_Text, (0x999999FF_rgba));
         ImGui::TextWrapped("Changes take effect after restarting oshot.");
         ImGui::PopStyleColor();
         ImGui::Spacing();
@@ -2856,7 +2856,7 @@ void ScreenshotTool::DrawManagePluginsWindow()
 
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             draw_list->AddRectFilled(p0, ImVec2(p0.x + size.x, p0.y + size.y), col.to_abgr(), 4.0f);
-            draw_list->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), 0xFFffffff, label);
+            draw_list->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), Colors::WHITE.to_abgr(), label);
 
             ImGui::Dummy(size);
         };
@@ -2892,8 +2892,8 @@ void ScreenshotTool::DrawManagePluginsWindow()
                     const bool     is_missing    = !is_enabled && !is_disabled;
 
                     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
-                    ImGui::PushStyleColor(ImGuiCol_ChildBg, rgba_t(0xffffff07).to_imvec4());
-                    ImGui::PushStyleColor(ImGuiCol_Border, rgba_t(0xffffff14).to_imvec4());
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, (0xffffff07_rgba));
+                    ImGui::PushStyleColor(ImGuiCol_Border, (0xffffff14_rgba));
 
                     ImGui::BeginChild("card",
                                       ImVec2(0, 0),
@@ -2909,11 +2909,11 @@ void ScreenshotTool::DrawManagePluginsWindow()
                     tag_size.x += 12.0f;
                     ImGui::SameLine(ImGui::GetContentRegionAvail().x - tag_size.x + ImGui::GetCursorPosX());
                     if (is_missing)
-                        draw_tag("Missing", rgba_t(0x8c2626FF));
+                        draw_tag("Missing", 0x8c2626FF_rgba);
                     else if (is_enabled)
-                        draw_tag("Enabled", rgba_t(0x197233FF));
+                        draw_tag("Enabled", 0x197233FF_rgba);
                     else
-                        draw_tag("Disabled", rgba_t(0x725919FF));
+                        draw_tag("Disabled", 0x725919FF_rgba);
 
                     // Description
                     if (!plugin.description.empty())
@@ -2938,7 +2938,7 @@ void ScreenshotTool::DrawManagePluginsWindow()
                         for (const std::string& license : plugin.licenses)
                         {
                             ImGui::SameLine();
-                            draw_tag(license.c_str(), rgba_t(0x334c7fFF));
+                            draw_tag(license.c_str(), 0x334c7fFF_rgba);
                         }
                     }
 
@@ -2949,7 +2949,7 @@ void ScreenshotTool::DrawManagePluginsWindow()
                         for (const std::string& plat : plugin.platforms)
                         {
                             ImGui::SameLine();
-                            draw_tag(plat.c_str(), rgba_t(0x3f3f3fFF));
+                            draw_tag(plat.c_str(), 0x3f3f3fFF_rgba);
                         }
                     }
 
@@ -2957,9 +2957,7 @@ void ScreenshotTool::DrawManagePluginsWindow()
 
                     if (is_missing)
                     {
-                        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
-                                           "Library not found at: %s",
-                                           plugin.library.string().c_str());
+                        ImGui::TextColored(Colors::RED, "Library not found at: %s", plugin.library.string().c_str());
                     }
                     else
                     {
@@ -2970,15 +2968,15 @@ void ScreenshotTool::DrawManagePluginsWindow()
 
                         if (is_enabled)
                         {
-                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.12f, 0.12f, 1.0f));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.20f, 0.20f, 1.0f));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.45f, 0.08f, 0.08f, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_Button, (0x8C1F1FFF_rgba));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (0xB23333FF_rgba));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonActive, (0x730F0FFF_rgba));
                         }
                         else
                         {
-                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.10f, 0.45f, 0.20f, 1.0f));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15f, 0.55f, 0.28f, 1.0f));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.08f, 0.38f, 0.16f, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_Button, (0x1A7333FF_rgba));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (0x268C47FF_rgba));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonActive, (0x146129FF_rgba));
                         }
 
                         if (ImGui::Button(btn_label))
@@ -3024,7 +3022,7 @@ void ScreenshotTool::DrawUninstallPluginsWindow()
     ImGui::SetNextWindowSize(ImVec2(620, 480), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Uninstall plugins##uninstall_plugins_window", &open, ImGuiWindowFlags_NoSavedSettings))
     {
-        ImGui::PushStyleColor(ImGuiCol_Text, rgba_t(0x999999FF).to_imvec4());
+        ImGui::PushStyleColor(ImGuiCol_Text, (0x999999FF_rgba));
         ImGui::TextWrapped("Changes take effect after restarting oshot.");
         ImGui::PopStyleColor();
         ImGui::Spacing();
@@ -3044,7 +3042,7 @@ void ScreenshotTool::DrawUninstallPluginsWindow()
 
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             draw_list->AddRectFilled(p0, ImVec2(p0.x + size.x, p0.y + size.y), col.to_abgr(), 4.0f);
-            draw_list->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), rgba_t(0xffffffFF).to_abgr(), label);
+            draw_list->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), Colors::WHITE.to_abgr(), label);
 
             ImGui::Dummy(size);
         };
@@ -3063,8 +3061,8 @@ void ScreenshotTool::DrawUninstallPluginsWindow()
             ImGui::PushID(repo.name.c_str());
 
             ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(1.0f, 1.0f, 1.0f, 0.027f));
-            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 0.078f));
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, (0xFFFFFF07_rgba));
+            ImGui::PushStyleColor(ImGuiCol_Border, (0xFFFFFF14_rgba));
 
             ImGui::BeginChild("card",
                               ImVec2(0, 0),
@@ -3092,7 +3090,7 @@ void ScreenshotTool::DrawUninstallPluginsWindow()
             {
                 if (same_line)
                     ImGui::SameLine();
-                draw_tag(repo.plugins[i].name.c_str(), rgba_t(0x334c7fFF));
+                draw_tag(repo.plugins[i].name.c_str(), 0x334c7fFF_rgba);
 
                 if (i + 1 < repo.plugins.size())
                 {
@@ -3105,9 +3103,9 @@ void ScreenshotTool::DrawUninstallPluginsWindow()
             const char* btn_label = "Uninstall";
             float       btn_width = ImGui::CalcTextSize(btn_label).x + ImGui::GetStyle().FramePadding.x * 2;
             ImGui::SetCursorPosX(ImGui::GetContentRegionAvail().x - btn_width + ImGui::GetCursorPosX());
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.12f, 0.12f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.20f, 0.20f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.45f, 0.08f, 0.08f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Button, (0x8C1F1FFF_rgba));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (0xB23333FF_rgba));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, (0x730F0FFF_rgba));
 
             if (ImGui::Button(btn_label))
             {
@@ -3146,9 +3144,9 @@ void ScreenshotTool::DrawUninstallPluginsWindow()
             }
             ImGui::SameLine();
 
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.12f, 0.12f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.20f, 0.20f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.45f, 0.08f, 0.08f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Button, (0x8C1F1FFF_rgba));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (0xB23333FF_rgba));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, (0x730F0FFF_rgba));
             if (ImGui::Button("Uninstall"))
             {
                 MUST_OK(m_plugin_manager.RemoveRepo(pending_repo),
@@ -3184,7 +3182,7 @@ void ScreenshotTool::StartInstall(const std::string& source)
     auto push = [state](plugin_install_event_t::Kind kind) {
         return [state, kind](const std::string_view msg) {
             std::lock_guard lock(state->events_mutex);
-            state->pending_events.push_back({ kind, std::string(msg) });
+            state->pending_events.push_back({ .kind = kind, .text = std::string(msg) });
         };
     };
 
@@ -3216,7 +3214,7 @@ void ScreenshotTool::StartInstall(const std::string& source)
         if (!r.ok())
         {
             std::lock_guard lock(state->events_mutex);
-            state->pending_events.push_back({ plugin_install_event_t::Kind::Error, r.error_v() });
+            state->pending_events.push_back({ .kind = plugin_install_event_t::Kind::Error, .text = r.error_v() });
         }
         state->running = false;
     });
@@ -3233,8 +3231,7 @@ void ScreenshotTool::DrawInstallPluginsWindow()
     ImGui::SetNextWindowSize(ImVec2(560, 220), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Install plugins##install_plugins_window", &open, ImGuiWindowFlags_NoSavedSettings))
     {
-        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
-                           "NOTE: PLUGINS CAN HAVE MALWARE. INSTALL THEM AT YOUR OWN RISK");
+        ImGui::TextColored(Colors::RED, "NOTE: PLUGINS CAN HAVE MALWARE. INSTALL THEM AT YOUR OWN RISK");
         ImGui::Spacing();
         ImGui::TextWrapped(
             "Accepts a git repository URL, a local folder with a manifest and source code, "
@@ -3244,8 +3241,8 @@ void ScreenshotTool::DrawInstallPluginsWindow()
         if (is_installing)
             ImGui::BeginDisabled();
 
-        static const char* filters[] = { "*.zip", "*.tgz", "*.txz" };
-        draw_input_text_file("Source", "##install_source", filters, 3, nullptr, m_install_source);
+        static constexpr auto filters = std::to_array({ "*.zip", "*.tgz", "*.txz" });
+        draw_input_text_file("Source", "##install_source", filters, nullptr, m_install_source);
 
         const bool can_install = !is_installing && !m_install_source.empty();
         if (!can_install)
@@ -3278,15 +3275,15 @@ void ScreenshotTool::DrawEventIcon(plugin_install_event_t::Kind kind)
         const char* glyph;
         rgba_t      color;
     };
-    static constexpr icon_t table[] = {
-        { "o", rgba_t(0x808080FF) },  // Status (in progress)
-        { "v", rgba_t(0x2ecc71FF) },  // Success
-        { "!", rgba_t(0xf1c40fFF) },  // Warning
-        { "x", rgba_t(0xe74c3cFF) },  // Error
-        { "i", rgba_t(0x3498dbFF) },  // Info
-    };
-    const icon_t& icon = table[idx(kind)];
-    ImGui::TextColored(icon.color.to_imvec4(), "%s", icon.glyph);
+    constexpr auto table = std::to_array<icon_t>({
+        { .glyph = "o", .color = 0x808080FF_rgba },  // Status (in progress)
+        { .glyph = "v", .color = 0x2ecc71FF_rgba },  // Success
+        { .glyph = "!", .color = 0xf1c40fFF_rgba },  // Warning
+        { .glyph = "x", .color = 0xe74c3cFF_rgba },  // Error
+        { .glyph = "i", .color = 0x3498dbFF_rgba },  // Info
+    });
+    const icon_t&  icon  = table[idx(kind)];
+    ImGui::TextColored(icon.color, "%s", icon.glyph);
 }
 
 void ScreenshotTool::DrawPluginInstallStatus()
@@ -3314,7 +3311,10 @@ void ScreenshotTool::DrawPluginInstallStatus()
             }
             else
             {
-                m_install_events.push_back({ ev.kind, ev.text, {}, ev.kind == plugin_install_event_t::Kind::Status });
+                m_install_events.push_back({ .kind        = ev.kind,
+                                             .text        = ev.text,
+                                             .details     = {},
+                                             .in_progress = ev.kind == plugin_install_event_t::Kind::Status });
             }
         }
     }
@@ -3398,21 +3398,21 @@ void ScreenshotTool::DrawLogsWindow()
     if (!open || !g_imgui_log_sink)
         return;
 
-    auto level_color = [](spdlog::level::level_enum lvl) -> rgba_t {
+    auto level_color = [](spdlog::level::level_enum lvl) {
         switch (lvl)
         {
-            case spdlog::level::trace:    return rgba_t(0x888888FF);  // gray
-            case spdlog::level::debug:    return rgba_t(0x9999FFFF);  // periwinkle
-            case spdlog::level::info:     return rgba_t(0x00AEFFFF);  // blueish
-            case spdlog::level::warn:     return rgba_t(0xFFCC33FF);  // amber
-            case spdlog::level::err:      return rgba_t(0xFF4D4DFF);  // red
-            case spdlog::level::critical: return rgba_t(0xFF0000FF);  // pure red
+            case spdlog::level::trace:    return 0x888888FF_rgba;  // gray
+            case spdlog::level::debug:    return 0x9999FFFF_rgba;  // periwinkle
+            case spdlog::level::info:     return 0x00AEFFFF_rgba;  // blueish
+            case spdlog::level::warn:     return 0xFFCC33FF_rgba;  // amber
+            case spdlog::level::err:      return 0xFF4D4DFF_rgba;  // red
+            case spdlog::level::critical: return Colors::RED;      // pure red
 
-            default: return rgba_t(0xFFFFFFFF);  // white
+            default: return Colors::WHITE;
         }
     };
 
-    auto level_tag = [](spdlog::level::level_enum lvl) -> const char* {
+    auto level_tag = [](spdlog::level::level_enum lvl) {
         switch (lvl)
         {
             case spdlog::level::trace:    return "TRACE";
@@ -3490,7 +3490,7 @@ void ScreenshotTool::DrawLogsWindow()
 
                 ImGui::TextDisabled("%s", time_fmt.c_str());
                 ImGui::SameLine();
-                ImGui::TextColored(level_color(msg.level).to_imvec4(), "[%s]", level_tag(msg.level));
+                ImGui::TextColored(level_color(msg.level), "[%s]", level_tag(msg.level));
                 ImGui::SameLine();
                 ImGui::TextUnformatted(msg.payload.data(), msg.payload.data() + msg.payload.size());
 
@@ -3622,7 +3622,7 @@ void ScreenshotTool::DrawDownloadOCRWindow()
 
             m_ocr_download = std::make_shared<ocr_download_t>();
 
-            std::thread([dl = m_ocr_download, cmd = std::move(cmd)]() mutable {
+            std::thread([&, dl = m_ocr_download]() mutable {
                 TinyProcessLib::Process proc(
                     cmd,
                     "",
@@ -3646,7 +3646,7 @@ void ScreenshotTool::DrawDownloadOCRWindow()
                             {
                                 const std::string_view line(dl->line_buf.c_str() + pos, end - pos);
                                 int                    pct = -1;
-                                if (sscanf(line.data(), " %d", &pct) == 1 && pct >= 0 && pct <= 100)
+                                if (sscanf(line.data(), " %d", &pct) == 1 && pct >= 0 && pct <= 100)  // NOLINT
                                 {
                                     dl->progress.store(static_cast<float>(pct));
                                 }
@@ -3740,7 +3740,7 @@ void ScreenshotTool::DrawDownloadOCRWindow()
         ImGui::Spacing();
         ShowIfError(ectx, OcrDownloadError::FailedToDownload);
         if (has_downloaded && !HasError(ectx, OcrDownloadError::FailedToDownload))
-            ImGui::TextColored(ImVec4(0.2f, 0.85f, 0.2f, 1.f), "Downloaded successfully!");
+            ImGui::TextColored((0x33D933FF_rgba), "Downloaded successfully!");
 
         ImGui::End();
     }
@@ -3901,8 +3901,9 @@ void ScreenshotTool::DrawOutputMenuSelection()
         layout.push_back(m.geo);
 
         ImGui::PushID(int(i));
-        ImGui::RadioButton(
-            fmt::format("{} ({}x{})", m.name[0] ? m.name : "Unknown", m.geo.w, m.geo.h).c_str(), &output_sel, int(i));
+        ImGui::RadioButton(fmt::format("{} ({}x{})", m.name[0] ? m.name.data() : "Unknown", m.geo.w, m.geo.h).c_str(),
+                           &output_sel,
+                           int(i));
         ImGui::PopID();
     }
 
@@ -3946,7 +3947,7 @@ void ScreenshotTool::Cancel()
 #else
         if (tex._TexID)
         {
-            GLuint texture = (GLuint)(intptr_t)tex._TexID;
+            auto texture = GLuint(intptr_t(tex._TexID));
             glDeleteTextures(1, &texture);
             tex = ImTextureRef{};
         }
@@ -3972,7 +3973,7 @@ bool ScreenshotTool::OpenImage(const std::string& path)
         return false;
     });
 
-    m_screenshot = std::move(cap.get());
+    m_screenshot = cap.get();
     fit_to_screen(m_screenshot);
 
 #if OSHOT_MACOS
@@ -3982,10 +3983,8 @@ bool ScreenshotTool::OpenImage(const std::string& path)
 #else
 
     // Recreate texture (CreateTexture() already deletes the old ones)
-    const Result<ImTextureRef>& r = CreateTexture(reinterpret_cast<void*>(static_cast<size_t>(m_texture_id._TexID)),
-                                                  m_screenshot.view(),
-                                                  m_screenshot.w,
-                                                  m_screenshot.h);
+    const Result<ImTextureRef>& r =
+        CreateTexture(m_texture_id._TexID, m_screenshot.view(), m_screenshot.w, m_screenshot.h);
     MUST_OK(r, {
         error("Failed to create openGL texture: {}", r.error_v());
         return false;
@@ -4011,7 +4010,7 @@ bool ScreenshotTool::OpenImage(const std::string& path)
     return true;
 }
 
-capture_result_t ScreenshotTool::GetFinalImage(bool is_text_tools)
+capture_result_t ScreenshotTool::GetFinalImage(bool)
 {
     UpdateWindowBg();
 
@@ -4061,7 +4060,7 @@ region_t ScreenshotTool::GetActiveRegion() const
     if (!has_selection)
     {
         // Full screenshot (visible area)
-        return region_t{ 0, 0, m_screenshot.w, m_screenshot.h };
+        return region_t{ .x = 0, .y = 0, .w = m_screenshot.w, .h = m_screenshot.h };
     }
 
     // Convert from screen space -> image space
@@ -4073,10 +4072,10 @@ region_t ScreenshotTool::GetActiveRegion() const
     // Clamp to image bounds (important if user drags outside)
     x = std::clamp(x, 0.0f, float(m_screenshot.w));
     y = std::clamp(y, 0.0f, float(m_screenshot.h));
-    w = std::clamp(w, 0.0f, float(m_screenshot.w - x));
-    h = std::clamp(h, 0.0f, float(m_screenshot.h - y));
+    w = std::clamp(w, 0.0f, float(m_screenshot.w) - x);
+    h = std::clamp(h, 0.0f, float(m_screenshot.h) - y);
 
-    return region_t{ int(x), int(y), int(w), int(h) };
+    return region_t{ .x = int(x), .y = int(y), .w = int(w), .h = int(h) };
 }
 
 void ScreenshotTool::UpdateWindowBg()
@@ -4112,10 +4111,8 @@ Result<> ScreenshotTool::CropToOutput(const std::deque<region_t>& layout, const 
     if (transform >= 1 && transform <= 3)
         m_screenshot = rotate_rgba(m_screenshot, 4 - transform);  // swap 1 (90) and 3 (270)
 
-    const Result<ImTextureRef>& r = CreateTexture(reinterpret_cast<void*>(static_cast<size_t>(m_texture_id._TexID)),
-                                                  m_screenshot.view(),
-                                                  m_screenshot.w,
-                                                  m_screenshot.h);
+    const Result<ImTextureRef>& r =
+        CreateTexture(m_texture_id._TexID, m_screenshot.view(), m_screenshot.w, m_screenshot.h);
     TRY_MSG(r, "Failed to recreate texture after crop: {}");
     m_texture_id = r.get();
 
@@ -4136,7 +4133,7 @@ ImRect ScreenshotTool::GetAnnotationBBox(const annotation_t& ann) const
             const float dx     = ann.end.x - ann.start.x;
             const float dy     = ann.end.y - ann.start.y;
             const float radius = std::sqrt(dx * dx + dy * dy);
-            return ImRect(ann.start.x - radius, ann.start.y - radius, ann.start.x + radius, ann.start.y + radius);
+            return { ann.start.x - radius, ann.start.y - radius, ann.start.x + radius, ann.start.y + radius };
         }
 
         case ToolType::Line:
@@ -4146,10 +4143,10 @@ ImRect ScreenshotTool::GetAnnotationBBox(const annotation_t& ann) const
             // them, and pad by half the stroke so thin/axis-aligned segments
             // stay clickable.
             const float half_t = std::max(ann.thickness, 4.0f) * 0.5f;
-            return ImRect(std::min(ann.start.x, ann.end.x) - half_t,
-                          std::min(ann.start.y, ann.end.y) - half_t,
-                          std::max(ann.start.x, ann.end.x) + half_t,
-                          std::max(ann.start.y, ann.end.y) + half_t);
+            return { std::min(ann.start.x, ann.end.x) - half_t,
+                     std::min(ann.start.y, ann.end.y) - half_t,
+                     std::max(ann.start.x, ann.end.x) + half_t,
+                     std::max(ann.start.y, ann.end.y) + half_t };
         }
 
         case ToolType::Text:
@@ -4160,13 +4157,13 @@ ImRect ScreenshotTool::GetAnnotationBBox(const annotation_t& ann) const
                 ImFontAtlasBuildMain(ImGui::GetIO().Fonts);
             const ImVec2 size = font ? font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, ann.text.c_str())
                                      : ImGui::CalcTextSize(ann.text.c_str());
-            return ImRect(ann.start.x, ann.start.y, ann.start.x + size.x, ann.start.y + size.y);
+            return { ann.start.x, ann.start.y, ann.start.x + size.x, ann.start.y + size.y };
         }
 
         case ToolType::Pencil:
         {
             if (ann.points.empty())
-                return ImRect(ann.start.x, ann.start.y, ann.start.x, ann.start.y);
+                return { ann.start.x, ann.start.y, ann.start.x, ann.start.y };
             ImVec2 min(ann.points.front().x, ann.points.front().y);
             ImVec2 max = min;
             for (const point_t& p : ann.points)
@@ -4176,14 +4173,14 @@ ImRect ScreenshotTool::GetAnnotationBBox(const annotation_t& ann) const
                 max.x = std::max(max.x, p.x);
                 max.y = std::max(max.y, p.y);
             }
-            return ImRect(min, max);
+            return { min, max };
         }
 
         case ToolType::Rectangle:
         case ToolType::RectangleFilled:
         default:
             // Leave as-is: start/end are already corners.
-            return ImRect(ann.start.x, ann.start.y, ann.end.x, ann.end.y);
+            return { ann.start.x, ann.start.y, ann.end.x, ann.end.y };
     }
 }
 
@@ -4192,7 +4189,7 @@ ImRect ScreenshotTool::GetAnnotationHandleBox(const annotation_t& ann) const
     constexpr float PIXEL   = 1.0f;
     const float     padding = ann.thickness - PIXEL;
     const ImRect    bbox    = GetAnnotationBBox(ann);
-    return ImRect(bbox.Min.x - padding, bbox.Min.y - padding, bbox.Max.x + padding, bbox.Max.y + padding);
+    return { bbox.Min.x - padding, bbox.Min.y - padding, bbox.Max.x + padding, bbox.Max.y + padding };
 }
 
 ImFont* ScreenshotTool::GetCachedFont(const std::string& font_path, const float font_size) const
@@ -4223,7 +4220,7 @@ ImFont* ScreenshotTool::CacheAndGetFont(const std::string& font_path, const floa
 
     const float safe_size = std::max(font_size, 16.0f);
     std::pair   key(font_path, safe_size);
-    m_font_cache[key] = { font_path, font, true };
+    m_font_cache[key] = { .font_path = font_path, .font = font, .loaded = true };
     if (font)
         ImFontAtlasBuildMain(ImGui::GetIO().Fonts);
 
@@ -4252,9 +4249,8 @@ void ScreenshotTool::CreateCopyTextButton(const std::string& text_copy, const st
     if (HasError(ectx, GeneralError::FailedToCopyText))
     {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
-                           "Failed to copy text: %s",
-                           GetError(ectx, GeneralError::FailedToCopyText).c_str());
+        ImGui::TextColored(
+            Colors::RED, "Failed to copy text: %s", GetError(ectx, GeneralError::FailedToCopyText).c_str());
     }
 }
 
@@ -4301,8 +4297,7 @@ void ScreenshotTool::RefreshOcrModels()
     else
     {
         ClearError(ectx, OcrError::InvalidPath);
-        const auto& it = std::find(m_ocr_models_list.begin(), m_ocr_models_list.end(), m_inputs.ocr_model);
-        if (it == m_ocr_models_list.end())
+        if (std::ranges::find(m_ocr_models_list, m_inputs.ocr_model) == m_ocr_models_list.end())
             SetError(ectx, OcrError::InvalidModel);
         else
             ClearError(ectx, OcrError::InvalidModel);
@@ -4365,19 +4360,18 @@ void ScreenshotTool::StyleDefaultColor()
     style.FrameBorderSize  = 0.0f;
 
     for (const auto& [color, rgba] : theme_colors)
-        style.Colors[color] = rgba.to_imvec4();
+        style.Colors[color] = rgba;
 }
 
-Result<ImTextureRef> ScreenshotTool::CreateTexture(void* tex, std::span<const uint8_t> data, int w, int h)
+Result<ImTextureRef> ScreenshotTool::CreateTexture(ImTextureID tex, std::span<const uint8_t> data, int w, int h)
 {
 #if OSHOT_MACOS
     // Metal backend handles textures separately
     return Ok(ImTextureRef{});
 #else
-    // Existing OpenGL implementation
     if (tex)
     {
-        GLuint old_texture = (GLuint)(intptr_t)tex;
+        const auto old_texture = static_cast<GLuint>(tex);
         glDeleteTextures(1, &old_texture);
     }
 
@@ -4394,6 +4388,7 @@ Result<ImTextureRef> ScreenshotTool::CreateTexture(void* tex, std::span<const ui
 
     ImTextureRef ref;
     ref._TexID = static_cast<ImTextureID>(texture);
+
     return Ok(ref);
 #endif
 }

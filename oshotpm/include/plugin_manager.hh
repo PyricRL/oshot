@@ -81,7 +81,7 @@ private:
 };
 
 // building a single plugin
-enum class PluginBuildResult
+enum class PluginBuildResult : std::uint8_t
 {
     Built,
     SkippedUnsupportedPlatform,
@@ -104,7 +104,7 @@ private:
     const PluginCallbacks& m_callbacks;
 };
 
-enum class ArchiveType
+enum class ArchiveType : std::uint8_t
 {
     None,
     Targz,
@@ -130,11 +130,11 @@ class PluginInstaller
 public:
     PluginInstaller(const PluginCallbacks& callbacks) : m_callbacks(callbacks) {}
 
-    Result<fs::path> InstallLibrary(const plugin_t& plugin,
-                                    const fs::path& library_dir,
-                                    const fs::path& manifest_config_path,
-                                    bool            force,
-                                    bool            is_update) const;
+    [[nodiscard]] Result<fs::path> InstallLibrary(const plugin_t& plugin,
+                                                  const fs::path& library_dir,
+                                                  const fs::path& manifest_config_path,
+                                                  bool            force,
+                                                  bool            is_update) const;
 
 private:
     const PluginCallbacks& m_callbacks;
@@ -146,7 +146,7 @@ private:
 // which drives two independent things at once: whether oshotpm is allowed
 // to delete/move it, and what RepoSource the resulting manifest_t gets
 // tagged with.
-enum class WorkingDirOrigin
+enum class WorkingDirOrigin : std::uint8_t
 {
     // A temp dir oshotpm created itself via `git clone`. Owned: cleaned up
     // on failure, renamed into the long-term cache on success. Tagged

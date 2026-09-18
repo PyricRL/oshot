@@ -136,7 +136,7 @@ void        oshot_str_free(oshot_str_t* str);
 
 static inline oshot_str_t oshot_str_borrow(const char* s)
 {
-    return (oshot_str_t){ s, s ? strlen(s) : 0 };
+    return (oshot_str_t){ .p = s, .len = s ? strlen(s) : 0 };
 }
 
 // Only frees OSHOT_VAL_STRING members

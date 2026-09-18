@@ -68,7 +68,7 @@ struct plugin_runtime_t
                      void*           state,
                      bool            enabled,
                      dylib::library  lib,
-                     TomlAPI         config,
+                     const TomlAPI&  config,
                      fs::path        config_path)
         : id(std::move(id)),
           config_prefix(std::move(config_prefix)),
@@ -78,7 +78,7 @@ struct plugin_runtime_t
           state(state),
           enabled(enabled),
           lib(std::move(lib)),
-          config(std::move(config)),
+          config(config),
           config_path(std::move(config_path))
     {}
 

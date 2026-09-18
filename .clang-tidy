@@ -4,8 +4,9 @@ Checks: >
   bugprone-*,
   modernize-*,
   clang-analyzer-*,
-  -modernize-use-trailing-return-type
-  -bugprone-reserved-identifier
-  -modernize-avoid-c-style-cast
+  -modernize-use-trailing-return-type,
+  -bugprone-reserved-identifier,
+  -bugprone-easily-swappable-parameters,
+  -modernize-avoid-c-style-cast,
 WarningsAsErrors: ''
 HeaderFilterRegex: '.*'

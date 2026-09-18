@@ -112,7 +112,7 @@ oshot_str_t oshot_get_plugin_data_dir()
 {
     const fs::path& p = g_current_plugin->data_dir;
     if (!fs::exists(p))
-        return oshot_str_borrow(NULL);
+        return oshot_str_borrow(nullptr);
 
     return oshot_str_new(p.string().c_str(), p.string().length());
 }
@@ -187,7 +187,7 @@ void oshot_info(oshot_str_t str)
 // Getter
 // ---------------------
 template <typename T>
-static T get_config_value(const char* key, T fallback)
+static T get_config_value(const char* key, const T& fallback)
 {
     return g_current_plugin->config.GetValue(key, fallback);
 }
@@ -222,7 +222,7 @@ size_t oshot_config_get_array(const char* key, oshot_value_t** out, size_t max)
 // Setter
 // ---------------------
 template <typename T>
-static void set_config_value(const char* key, T val)
+static void set_config_value(const char* key, const T& val)
 {
     g_current_plugin->config.SetValue(key, val);
 }
@@ -260,7 +260,7 @@ void oshot_config_set_value(const char* key, const oshot_value_t* val)
 // Getter
 // ---------------------
 template <typename T>
-static T get_cache_value(const char* key, T fallback)
+static T get_cache_value(const char* key, const T& fallback)
 {
     return g_cache->GetValue<T>(prefixed_key(key), fallback);
 }
@@ -295,7 +295,7 @@ size_t oshot_cache_get_array(const char* key, oshot_value_t** out, size_t max)
 // Setter
 // ---------------------
 template <typename T>
-static void set_cache_value(const char* key, T val)
+static void set_cache_value(const char* key, const T& val)
 {
     g_cache->SetValue<T>(prefixed_key(key), val);
 }

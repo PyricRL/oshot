@@ -111,6 +111,7 @@ static void help(bool invalid_opt = false)
 }
 
 // clang-format off
+// NOLINTBEGIN
 // parseargs() but only for parsing the user config path trough args
 // and so we can directly construct Config
 static fs::path parse_config_path(int argc, char* argv[], const fs::path& configDir)
@@ -214,6 +215,7 @@ static bool parseargs(int argc, char* argv[], const fs::path& configFile)
 }
 
 // clang-format on
+// NOLINTEND
 static std::mutex              mtx;
 static std::condition_variable cv;
 static std::atomic<bool>       quit{ false };
@@ -486,64 +488,71 @@ int main(int argc, char* argv[])
 
     out.write(reinterpret_cast<const char*>(oshot_png), std::streamsize(oshot_png_len));
     out.close();
-    TrayIcon tray = { png_path.string(), "oshot.ico", "oshot", menu };
+    TrayIcon tray = { .iconFilePng = png_path.string(), .iconFileIco = "oshot.ico", .tooltip = "oshot", .menu = menu };
 #endif
 
-    tray.menu.push_back(new TrayMenu{ "Capture",
-                                      true,
-                                      false,
-                                      false,
-                                      [&](TrayMenu*) {
+    tray.menu.push_back(new TrayMenu{ .text        = "Capture",
+                                      .isEnabled   = true,
+                                      .isChecked   = false,
+                                      .hasCheckbox = false,
+                                      .onClicked =
+                                          [&](TrayMenu*) {
 #if OSHOT_TOOL_ON_MAIN_THREAD
-                                          run_main_tool();
+                                              run_main_tool();
 #else
-                                          std::lock_guard lk(mtx);
-                                          // only queue if not already queued
-                                          if (!do_capture)
-                                          {
-                                              do_capture = true;
-                                              cv.notify_all();
-                                          }
+                                              std::lock_guard lk(mtx);
+                                              // only queue if not already queued
+                                              if (!do_capture)
+                                              {
+                                                  do_capture = true;
+                                                  cv.notify_all();
+                                              }
 #endif
-                                      },
-                                      {} });
+                                          },
+                                      .subMenu = {} });
 
-    tray.menu.push_back(new TrayMenu{ "Open Image",
-                                      true,
-                                      false,
-                                      false,
-                                      [&](TrayMenu*) {
-                                          const char* filter[] = { "*.png", "*.jpeg", "*.jpg", "*.bmp" };
-                                          const char* open_path =
-                                              tinyfd_openFileDialog("Open Image",
-                                                                    "",        // default path
-                                                                    4,         // number of filter patterns
-                                                                    filter,    // file filters
-                                                                    "Images",  // filter description
-                                                                    false      // allow multiple selections
-                                              );
+    tray.menu.push_back(new TrayMenu{
+        .text        = "Open Image",
+        .isEnabled   = true,
+        .isChecked   = false,
+        .hasCheckbox = false,
+        .onClicked =
+            [&](TrayMenu*) {
+                const std::array<const char*, 4> filters = { "*.png", "*.jpeg", "*.jpg", "*.bmp" };
+                const char* open_path = tinyfd_openFileDialog("Open Image",
+                                                              "",              // default path
+                                                              filters.size(),  // number of filter patterns
+                                                              filters.data(),  // file filters
+                                                              "Images",        // filter description
+                                                              false            // allow multiple selections
+                );
 
 #if OSHOT_TOOL_ON_MAIN_THREAD
-                                          run_main_tool();
+                run_main_tool();
 #else
-                                          std::lock_guard lk(mtx);
-                                          // only queue if not already queued
-                                          if (!do_capture)
-                                          {
-                                              do_capture = true;
-                                              cv.notify_all();
-                                          }
+                std::lock_guard lk(mtx);
+                // only queue if not already queued
+                if (!do_capture)
+                {
+                    do_capture = true;
+                    cv.notify_all();
+                }
 #endif
-                                          if (open_path)
-                                              g_config->Runtime.source_file = open_path;
-                                      },
-                                      {} });
+                if (open_path)
+                    g_config->Runtime.source_file = open_path;
+            },
+        .subMenu = {} });
 
-    tray.menu.push_back(new TrayMenu{ "Quit", true, false, false, [&](TrayMenu*) { exit_handler(0); }, {} });
+    tray.menu.push_back(new TrayMenu{ .text        = "Quit",
+                                      .isEnabled   = true,
+                                      .isChecked   = false,
+                                      .hasCheckbox = false,
+                                      .onClicked   = [&](TrayMenu*) { exit_handler(0); },
+                                      .subMenu     = {} });
 
     if (trayMaker.Initialize(&tray))
     {
-        while (trayMaker.Loop(1))
+        while (trayMaker.Loop(true))
         {
         }
     }

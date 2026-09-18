@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -60,6 +61,8 @@
 #  include <stdio.h>
 #  include <windows.h>
 #endif
+
+using std::move;
 
 using namespace spdlog;
 
@@ -124,18 +127,18 @@ Result<capture_result_t> crop_to_monitor(const capture_result_t&     full,
         max_x = std::max(max_x, m.x + m.w);
         max_y = std::max(max_y, m.y + m.h);
     }
-    const int layout_w = max_x - min_x;
-    const int layout_h = max_y - min_y;
+    const auto layout_w = float(max_x - min_x);
+    const auto layout_h = float(max_y - min_y);
     if (layout_w <= 0 || layout_h <= 0)
         return Err("Degenerate monitor layout");
 
     const float scale_x = float(full.w) / layout_w;
     const float scale_y = float(full.h) / layout_h;
 
-    const int crop_x = std::clamp(int(std::lround((target.x - min_x) * scale_x)), 0, full.w);
-    const int crop_y = std::clamp(int(std::lround((target.y - min_y) * scale_y)), 0, full.h);
-    const int crop_w = std::clamp(int(std::lround(target.w * scale_x)), 0, full.w - crop_x);
-    const int crop_h = std::clamp(int(std::lround(target.h * scale_y)), 0, full.h - crop_y);
+    const int crop_x = std::clamp(int(std::lround(float(target.x - min_x) * scale_x)), 0, full.w);
+    const int crop_y = std::clamp(int(std::lround(float(target.y - min_y) * scale_y)), 0, full.h);
+    const int crop_w = std::clamp(int(std::lround(float(target.w) * scale_x)), 0, full.w - crop_x);
+    const int crop_h = std::clamp(int(std::lround(float(target.h) * scale_y)), 0, full.h - crop_y);
 
     if (crop_w <= 0 || crop_h <= 0)
         return Err("Computed crop rect is empty");
@@ -190,6 +193,7 @@ capture_result_t rotate_rgba(const capture_result_t& src, int turns_cw)
                     dx = y;
                     dy = src.w - 1 - x;
                     break;
+                default:;
             }
             const uint8_t* psrc = src.data.data() + (size_t(y) * src.w + x) * 4;
             uint8_t*       pdst = out.data.data() + (size_t(dy) * out.w + dx) * 4;
@@ -284,7 +288,7 @@ static std::vector<uint8_t> ximage_to_rgba(XImage* image, int width, int height)
                 {
                     rgba_t c = rgba_t::from_argb(px[x]);
                     c.a      = 0xFF;
-                    store_rgba(dst + x * 4, c);
+                    store_rgba(dst + static_cast<ptrdiff_t>(x * 4), c);
                 }
             }
             return out;
@@ -297,7 +301,7 @@ static std::vector<uint8_t> ximage_to_rgba(XImage* image, int width, int height)
         {
             rgba_t c = rgba_t::from_argb(XGetPixel(image, x, y));
             c.a      = 0xFF;
-            store_rgba(out.data() + (y * width + x) * 4, c);
+            store_rgba(out.data() + (static_cast<ptrdiff_t>(y * width + x) * 4), c);
         }
     }
     return out;
@@ -316,10 +320,10 @@ Result<capture_result_t> capture_full_screen_x11()
 
     Window root = DefaultRootWindow(display);
 
-    region_t capture{ 0 };
+    region_t capture{ .x = 0 };
     if (std::optional<region_t> op_capture = get_cursor_monitor_xrandr(display))
     {
-        capture = std::move(*op_capture);
+        capture = *op_capture;
     }
     else
     {
@@ -412,7 +416,7 @@ Result<capture_result_t> capture_full_screen_wayland()
         "",  // cwd
         [&](const char* bytes, size_t n) {
             // stdout (binary)
-            const uint8_t* p = reinterpret_cast<const uint8_t*>(bytes);
+            const auto* p = reinterpret_cast<const uint8_t*>(bytes);
             buf.insert(buf.end(), p, p + n);
         },
         [&](const char* p, size_t n) {
@@ -453,9 +457,9 @@ struct portal_state_t
 
 static gboolean on_timeout(gpointer user_data)
 {
-    portal_state_t* st = reinterpret_cast<portal_state_t*>(user_data);
-    st->error_msg      = "Timed out waiting for portal response (is xdg-desktop-portal running?)";
-    st->timeout_id     = 0;  // GLib will remove the source; mark it gone so cleanup skips it
+    auto* st       = reinterpret_cast<portal_state_t*>(user_data);
+    st->error_msg  = "Timed out waiting for portal response (is xdg-desktop-portal running?)";
+    st->timeout_id = 0;  // GLib will remove the source; mark it gone so cleanup skips it
     g_main_loop_quit(st->loop);
     return G_SOURCE_REMOVE;
 }
@@ -487,7 +491,7 @@ static void on_response(GDBusConnection* conn,
                         GVariant* parameters,
                         gpointer  user_data)
 {
-    portal_state_t* st = reinterpret_cast<portal_state_t*>(user_data);
+    auto* st = reinterpret_cast<portal_state_t*>(user_data);
 
     guint32      response = 2;
     GVariant*    results  = nullptr;
@@ -639,7 +643,7 @@ Result<capture_result_t> capture_full_screen_portal()
     std::optional<region_t> op_mon = get_cursor_monitor_xrandr(nullptr);
     if (op_mon && (st.cap.w > op_mon->w || st.cap.h > op_mon->h))
     {
-        region_t m = std::move(*op_mon);
+        region_t m = *op_mon;
         debug("Portal: got monitor with xrandr at cursor position");
         debug("Portal: cropping {}x{} capture to monitor {}x{}+{}+{}", st.cap.w, st.cap.h, m.w, m.h, m.x, m.y);
 

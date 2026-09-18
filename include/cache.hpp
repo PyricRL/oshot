@@ -35,7 +35,7 @@
 // util.hpp
 std::string expand_var(std::string ret);
 
-enum class CacheEntry
+enum class CacheEntry : uint8_t
 {
     AnnColor,
     ImgSavePath,
@@ -46,11 +46,11 @@ class Cache : public TomlAPI
 {
 public:
     Cache(const std::string& cache_dir);
-    ~Cache();
+    ~Cache() override;
 
     Result<> LoadCacheFile();
 
-    const std::string& GetCacheDirPath() const { return m_cache_dir_path; }
+    [[nodiscard]] const std::string& GetCacheDirPath() const { return m_cache_dir_path; }
 
     using TomlAPI::GetValue;
     using TomlAPI::SetValue;
@@ -69,7 +69,10 @@ public:
     }
 
 protected:
-    std::string BuildKey(const std::string_view key) const override { return fmt::format("cache.{}", key); }
+    [[nodiscard]] std::string BuildKey(const std::string_view key) const override
+    {
+        return fmt::format("cache.{}", key);
+    }
 
 private:
     void                         CreateFile();

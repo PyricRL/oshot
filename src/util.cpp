@@ -27,7 +27,9 @@
 
 #include <fcntl.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -88,9 +90,6 @@
 #endif
 // clang-format on
 
-char g_sock_path[100];
-int  g_sock = -1;
-
 // Defined and registered in src/main_tool_* source files
 namespace main_tool
 {
@@ -124,7 +123,7 @@ static const std::unordered_map<std::string, std::string>& get_xdg_user_dirs()
 
 constexpr ImVec4 rgba_t::to_imvec4() const
 {
-    return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
+    return { float(r) / 255.0f, float(g) / 255.0f, float(b) / 255.0f, float(a) / 255.0f };
 }
 
 #if OSHOT_WINDOWS
@@ -198,7 +197,7 @@ int get_screen_dpi()
         return 96;  // fallback
 
     double dpi = double(width_px) / (size_mm.width / 25.4);
-    return int(dpi + 0.5);
+    return int(std::lround(dpi));
 #  else
     Display* dpy = XOpenDisplay(nullptr);
     if (!dpy)
@@ -209,19 +208,27 @@ int get_screen_dpi()
     XCloseDisplay(dpy);
 
     double dpi = width_px / (width_mm / 25.4);
-    return int(dpi + 0.5);
+    return int(std::lround(dpi));
 #  endif
 }
 #endif
 
 std::vector<std::string> split(const std::string_view text, const char delim)
 {
-    std::string              line;
     std::vector<std::string> vec;
-    std::stringstream        ss(text.data());
-    while (std::getline(ss, line, delim))
+
+    size_t start = 0;
+    while (start <= text.size())
     {
-        vec.push_back(line);
+        const size_t end = text.find(delim, start);
+        if (end == text.npos)
+        {
+            vec.emplace_back(text.substr(start));
+            break;
+        }
+
+        vec.emplace_back(text.substr(start, end - start));
+        start = end + 1;
     }
 
     return vec;
@@ -262,20 +269,17 @@ std::vector<uint8_t> encode_to_image(const capture_result_t& cap, ImageExt ext)
 
 void fit_to_screen(capture_result_t& img)
 {
-    const int img_w = img.w;
-    const int img_h = img.h;
-
-    if (img_w <= g_scr_w && img_h <= g_scr_h)
+    if (img.w <= g_scr_w && img.h <= g_scr_h)
         return;
 
-    float scale = std::min(float(g_scr_w) / img_w, float(g_scr_h) / img_h);
+    float scale = std::min(float(g_scr_w) / float(img.w), float(g_scr_h) / float(img.h));
 
-    int new_w = int(std::round(img_w * scale));
-    int new_h = int(std::round(img_h * scale));
+    int new_w = int(std::round(float(img.w) * scale));
+    int new_h = int(std::round(float(img.h) * scale));
 
-    std::vector<uint8_t> resized(new_w * new_h * 4);
+    std::vector<uint8_t> resized(size_t(new_w) * new_h * 4);
 
-    bool ok = stbir_resize_uint8_linear(img.data.data(), img_w, img_h, 0, resized.data(), new_w, new_h, 0, STBIR_RGBA);
+    bool ok = stbir_resize_uint8_linear(img.data.data(), img.w, img.h, 0, resized.data(), new_w, new_h, 0, STBIR_RGBA);
     if (!ok)
     {
         spdlog::warn("Failed to resize image: {}", STBI_ERROR);
@@ -287,9 +291,9 @@ void fit_to_screen(capture_result_t& img)
     img.h    = new_h;
 }
 
-std::string get_relative_path(const std::string_view relative_path, const std::string_view env, const long long mode)
+std::string get_relative_path(const std::string_view relative_path, const char* env, const long long mode)
 {
-    const char* c_env = std::getenv(env.data());
+    const char* c_env = std::getenv(env);
     if (!c_env)
         return UNKNOWN;
 
@@ -299,17 +303,17 @@ std::string get_relative_path(const std::string_view relative_path, const std::s
 
     for (const std::string& dir : split(c_env, ':'))
     {
-        // -300ns for not creating a string. stonks
         fullPath += dir;
         fullPath += '/';
-        fullPath += relative_path.data();
-        if ((stat(fullPath.c_str(), &sb) == 0) && sb.st_mode & mode)
-            return fullPath.c_str();
+        fullPath += relative_path;
+
+        if (stat(fullPath.c_str(), &sb) == 0 && (sb.st_mode & mode) != 0)
+            return fullPath;
 
         fullPath.clear();
     }
 
-    return UNKNOWN;  // not found
+    return UNKNOWN;
 }
 
 std::string which(const std::string_view command)
@@ -321,7 +325,7 @@ static std::vector<uint8_t> read_stdin_binary()
 {
     std::vector<uint8_t> buffer;
 
-    uint8_t temp[UINT16_MAX];
+    uint8_t temp[UINT16_MAX];  // NOLINT
     while (true)
     {
         size_t n = fread(temp, 1, sizeof(temp), stdin);
@@ -413,12 +417,12 @@ Result<> save_image(SavingOp op, const capture_result_t& img, ImageExt ext)
     const fs::path& saved_path_dir = g_cache->GetValue(CacheEntry::ImgSavePath, get_home_pictures_dir().string());
 
     std::string filter_type = ("*." + str_tolower(g_config->File.image_out_type.first));
-    const char* filter[]    = { filter_type.c_str() };
+    const auto  filter      = std::to_array({ filter_type.c_str() });
     const char* save_path   = tinyfd_saveFileDialog("Save File",
                                                     (saved_path_dir / fmt.get()).string().c_str(),  // default path
-                                                    1,        // number of filter patterns
-                                                    filter,   // file filters
-                                                    "Images"  // filter description
+                                                    1,              // number of filter patterns
+                                                    filter.data(),  // file filters
+                                                    "Images"        // filter description
     );
 
     maximize_window();
@@ -451,60 +455,55 @@ void rgba_to_grayscale(const uint8_t* src, uint8_t* result, int width, int heigh
     const int pixels = width * height;
     for (int i = 0; i < pixels; ++i)
     {
-        rgba_t c = load_rgba(src + i * 4);
+        rgba_t c = load_rgba(src + static_cast<ptrdiff_t>(i * 4));
         // ITU-R BT.601 luminance
         result[i] = uint8_t((77 * c.r + 150 * c.g + 29 * c.b) >> 8);
     }
 }
 
-byte_units_t auto_divide_bytes(const double num, const std::uint16_t base, const std::string_view maxprefix)
+byte_units_t auto_divide_bytes(const double num, const ByteUnit base, const std::string_view maxprefix)
 {
     double size = num;
 
-    std::array<std::string_view, 9> prefixes;
-    if (base == 1024)
-        prefixes = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB" };
-    else if (base == 1000)
-        prefixes = { "B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
-    else
-        prefixes = { "B" };
+    const auto prefixes =
+        (base == ByteUnit::Kibibyte
+             ? std::to_array({ "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB" })
+             : (base == ByteUnit::Kilobyte ? std::to_array({ "B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" })
+                                           : std::array<const char*, 9>({ "B" })));
 
     size_t      counter = 0;
-    const auto& max_it  = !maxprefix.empty() ? std::find(prefixes.begin(), prefixes.end(), maxprefix) : prefixes.end();
+    const auto& max_it  = !maxprefix.empty() ? std::ranges::find(prefixes, maxprefix) : prefixes.end();
 
-    while (counter + 1 < prefixes.size() && size >= base)
+    while (counter + 1 < prefixes.size() && size >= double(base))
     {
         if (max_it != prefixes.end() && prefixes[counter] == maxprefix)
             break;
-        size /= base;
+        size /= double(base);
         ++counter;
     }
 
-    return { prefixes[counter].data(), size };
+    return { .unit = std::string(prefixes[counter]), .num_bytes = size };
 }
 
 byte_units_t divide_bytes(const double num, const std::string_view prefix)
 {
     if (prefix == "B")
-        return { "B", num };
+        return { .unit = "B", .num_bytes = num };
 
     // GiB
     // 012
-    const std::uint16_t             base = (prefix.size() == 3 && prefix[1] == 'i') ? 1024 : 1000;
-    std::array<std::string_view, 9> prefixes;
-    if (base == 1024)
-        prefixes = { "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB" };
-    else if (base == 1000)
-        prefixes = { "B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
+    const std::uint16_t base = (prefix.size() == 3 && prefix[1] == 'i') ? 1024 : 1000;
+    const auto prefixes = base == 1024 ? std::to_array({ "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB" })
+                                       : std::to_array({ "B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" });
 
-    const auto& it = std::find(prefixes.begin(), prefixes.end(), prefix);
+    const auto& it = std::ranges::find(prefixes, prefix);
     if (it == prefixes.end())
-        return { "B", num };
+        return { .unit = "B", .num_bytes = num };
 
     const size_t index = std::distance(prefixes.begin(), it);
     const double value = num / std::pow(static_cast<double>(base), index);
 
-    return { prefix.data(), value };
+    return { .unit = std::string(prefix), .num_bytes = value };
 }
 
 std::string replace_str(std::string& str, const std::string_view from, const std::string_view to)
@@ -571,12 +570,12 @@ bool hexstr_to_col(const std::string_view hex, uint32_t& out)
 static std::optional<fs::path> get_known_dir(REFKNOWNFOLDERID rfid, const char* backup_env)
 {
     PWSTR widePath = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(rfid, 0, NULL, &widePath)))
+    if (SUCCEEDED(SHGetKnownFolderPath(rfid, 0, nullptr, &widePath)))
     {
         // Get required buffer size
-        int         size = WideCharToMultiByte(CP_UTF8, 0, widePath, -1, NULL, 0, NULL, NULL);
+        int         size = WideCharToMultiByte(CP_UTF8, 0, widePath, -1, nullptr, 0, nullptr, nullptr);
         std::string narrowPath(size, 0);
-        WideCharToMultiByte(CP_UTF8, 0, widePath, -1, &narrowPath[0], size, NULL, NULL);
+        WideCharToMultiByte(CP_UTF8, 0, widePath, -1, &narrowPath[0], size, nullptr, nullptr);
         CoTaskMemFree(widePath);
 
         // Remove null terminator from string
@@ -585,7 +584,7 @@ static std::optional<fs::path> get_known_dir(REFKNOWNFOLDERID rfid, const char* 
     }
 
     const char* dir = std::getenv(backup_env);
-    if (dir != NULL && dir[0] != '\0' && fs::exists(dir))
+    if (dir != nullptr && dir[0] != '\0' && fs::exists(dir))
         return fs::path(dir);
 
     return std::nullopt;
@@ -624,7 +623,7 @@ fs::path get_home_dir()
         return std::string(d) + p;
 
     char buf[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PROFILE, NULL, 0, buf)))
+    if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_PROFILE, nullptr, 0, buf)))
         return buf;
 
     die("Cannot determine home directory");
@@ -653,7 +652,7 @@ fs::path get_home_pictures_dir()
         return *p;
 
     const char* dir = std::getenv("USERPROFILE");
-    if (dir != NULL && dir[0] != '\0')
+    if (dir != nullptr && dir[0] != '\0')
     {
         fs::path pictures = fs::path(dir) / "Pictures";
         if (fs::exists(pictures))
@@ -666,8 +665,8 @@ fs::path get_home_pictures_dir()
 static fs::path get_known_dir(const char* xdg, const char* backup, bool search_xdg_user_dirs = true)
 {
     const char* dir = std::getenv(xdg);
-    if (dir != NULL && dir[0] != '\0' && fs::exists(dir))
-        return fs::path(dir);
+    if (dir != nullptr && dir[0] != '\0' && fs::exists(dir))
+        return dir;
 
     if (search_xdg_user_dirs)
     {
@@ -714,7 +713,7 @@ bool is_system_dark_mode()
     if (const char* t = ::getenv("GTK_THEME"))
     {
         std::string s(t);
-        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+        std::ranges::transform(s, s.begin(), ::tolower);
         if (s.find("dark") != std::string::npos)
             return true;
         if (s.find("light") != std::string::npos)
@@ -808,14 +807,16 @@ std::string expand_var(std::string ret)
 std::string str_toupper(std::string str)
 {
     for (char& c : str)
-        c = toupper(c);
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
     return str;
 }
 
 std::string str_tolower(std::string str)
 {
     for (char& c : str)
-        c = tolower(c);
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
     return str;
 }
 

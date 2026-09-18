@@ -48,7 +48,7 @@
 // no upstream to track: oshotpm never renames/deletes the source, and
 // UpdateRepos() skips them outright instead of guessing from git_hash being
 // empty.
-enum class RepoSource
+enum class RepoSource : std::uint8_t
 {
     GitRepository,
     LocalPlugin
@@ -121,20 +121,20 @@ struct manifest_t
     std::vector<std::string> dependencies;
 };
 
-constexpr char const MANIFEST_NAME[] = "oshot-plugin.toml";
+constexpr char const MANIFEST_NAME[] = "oshot-plugin.toml";  // NOLINT
 
 class Manifest
 {
 public:
-    Manifest(const fs::path& path);
+    Manifest(fs::path path);
 
-    plugin_t GetPlugin(const std::string_view name) const;
-    Result<> ParseManifest();
+    [[nodiscard]] plugin_t GetPlugin(const std::string_view name) const;
+    Result<>               ParseManifest();
 
-    const manifest_t& GetRepo() const { return m_repo; }
-    bool              IsParsed() const { return m_is_parsed; }
-    static bool       IsValidID(const std::string_view id);
-    static bool       IsValidName(const std::string_view name);
+    [[nodiscard]] const manifest_t& GetRepo() const { return m_repo; }
+    [[nodiscard]] bool              IsParsed() const { return m_is_parsed; }
+    static bool                     IsValidID(const std::string_view id);
+    static bool                     IsValidName(const std::string_view name);
 
 private:
     fs::path   m_path;

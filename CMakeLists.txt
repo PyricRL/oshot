@@ -193,7 +193,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 if(NOT APPLE)
-    target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::OpenGL GLEW::GLEW)
+    target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::GL GLEW::GLEW)
 endif()
 
 if(APPLE)

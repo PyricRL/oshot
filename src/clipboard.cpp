@@ -59,13 +59,13 @@ Result<int> start_linux_copy(SessionType session, const std::string_view mime_ty
         kill(clip_pid, SIGINT);
 
         // we need to do this on Linux, because the process will be defunct otherwise.
-        waitpid(clip_pid, NULL, 0);
+        waitpid(clip_pid, nullptr, 0);
 
         clip_pid = -1;
     }
 
-    int copy_pipe[2];
-    if (pipe(copy_pipe) == -1)
+    std::array<int, 2> copy_pipe;
+    if (pipe(copy_pipe.data()) == -1)
         return Err("Failed to open stdin pipe: {}", strerror(errno));
 
     clip_pid = fork();
@@ -161,7 +161,7 @@ Result<> Clipboard::CopyImage(const capture_result_t& cap, ImageExt ext)
     spec.width          = cap.w;
     spec.height         = cap.h;
     spec.bits_per_pixel = 32;
-    spec.bytes_per_row  = cap.w * 4;
+    spec.bytes_per_row  = size_t(cap.w) * 4;
 
     spec.red_mask    = 0x000000ff;
     spec.green_mask  = 0x0000ff00;

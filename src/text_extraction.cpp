@@ -30,8 +30,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <numbers>
+#include <ranges>
 #include <utility>
 #include <vector>
 
@@ -183,7 +185,7 @@ static Pix* rgba_to_pix(std::span<const uint8_t> rgba, int w, int h)
 
     for (int y = 0; y < h; ++y)
     {
-        uint32_t* row = dst + y * stride;
+        uint32_t* row = dst + static_cast<ptrdiff_t>(y * stride);
         for (int x = 0; x < w; ++x)
         {
             const uint8_t* p    = src + (size_t(y) * w + x) * 4;
@@ -196,9 +198,6 @@ static Pix* rgba_to_pix(std::span<const uint8_t> rgba, int w, int h)
     return pix;
 }
 
-OcrAPI::OcrAPI() : m_api(std::make_unique<tesseract::TessBaseAPI>())
-{}
-
 OcrAPI::~OcrAPI()
 {
     if (m_api && m_initialized)
@@ -207,7 +206,7 @@ OcrAPI::~OcrAPI()
 
 Result<> OcrAPI::Configure(const char* data_path, const char* model, tesseract::OcrEngineMode oem)
 {
-    ocr_config_t next{ data_path, model };
+    ocr_config_t next{ .path = data_path, .model = model };
 
     if (m_config && *m_config == next)
         return Ok();  // nothing to do
@@ -231,8 +230,8 @@ Result<> OcrAPI::Configure(const char* data_path, const char* model, tesseract::
 static void trim(std::string& s)
 {
     auto not_ws = [](unsigned char c) { return !std::isspace(c); };
-    s.erase(s.begin(), std::find_if(s.begin(), s.end(), not_ws));
-    s.erase(std::find_if(s.rbegin(), s.rend(), not_ws).base(), s.end());
+    s.erase(s.begin(), std::ranges::find_if(s, not_ws));
+    s.erase(std::ranges::find_if(std::views::reverse(s), not_ws).base(), s.end());
 }
 
 Result<ocr_result_t> OcrAPI::ExtractTextCapture(const capture_result_t& cap)
@@ -266,8 +265,8 @@ Result<ocr_result_t> OcrAPI::ExtractTextCapture(const capture_result_t& cap)
 
     tesseract::PageSegMode psm = choose_psm(proc_w, proc_h);
 
-    float scale         = std::min(float(g_scr_w) / cap.w, float(g_scr_h) / cap.h);
-    int   effective_dpi = int(get_screen_dpi() * scale);
+    float scale         = std::min(float(g_scr_w) / float(cap.w), float(g_scr_h) / float(cap.h));
+    int   effective_dpi = get_screen_dpi() * int(scale);
     effective_dpi       = std::clamp(effective_dpi, 150, 300);
 
     m_api->SetPageSegMode(psm);
@@ -290,7 +289,7 @@ Result<ocr_result_t> OcrAPI::ExtractTextCapture(const capture_result_t& cap)
 
     ret.data    = std::move(data);
     ret.psm_str = psm_to_str(psm);
-    ret.psm     = std::move(psm);
+    ret.psm     = psm;
 
     if (tesseract::ResultIterator* ri = m_api->GetIterator())
     {
@@ -328,7 +327,7 @@ ZbarAPI::ZbarAPI()
 Result<zbar_result_t> ZbarAPI::ExtractTextsCapture(const capture_result_t& cap)
 {
     zbar_result_t        ret;
-    std::vector<uint8_t> gray(cap.w * cap.h);
+    std::vector<uint8_t> gray(size_t(cap.w) * cap.h);
 
     rgba_to_grayscale(cap.view().data(), gray.data(), cap.w, cap.h);
 

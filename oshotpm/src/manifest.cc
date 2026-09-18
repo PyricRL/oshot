@@ -61,7 +61,7 @@ bool Manifest::IsValidID(const std::string_view id)
     return found_dot;
 }
 
-Manifest::Manifest(const fs::path& path) : m_path(path)
+Manifest::Manifest(fs::path path) : m_path(std::move(path))
 {}
 
 Result<> Manifest::ParseManifest()
@@ -138,7 +138,7 @@ Result<> Manifest::ParseManifest()
 
 plugin_t Manifest::GetPlugin(const std::string_view name) const
 {
-    return { .name        = name.data(),
+    return { .name        = std::string(name),
              .id          = m_toml.GetValueFromTable<std::string>(name, "id", UNKNOWN),
              .description = m_toml.GetValueFromTable<std::string>(name, "description", UNKNOWN),
              .output_dir  = m_toml.GetValueFromTable<std::string>(name, "output-dir", UNKNOWN),

@@ -47,20 +47,21 @@ struct capture_result_t
     int                  w = 0;
     int                  h = 0;
 
-    std::span<const uint8_t> view() const { return data; }
-    std::span<uint8_t>       view() { return data; }
+    [[nodiscard]] std::span<const uint8_t> view() const { return data; }
+    std::span<uint8_t>                     view() { return data; }
 };
 
 struct monitor_t
 {
-    char     name[64];
+    std::array<char, 64> name;
+
     region_t geo;
     bool     done;
     void*    handle    = nullptr;  // struct wl_output*
     int32_t  transform = 0;        // WL_OUTPUT_TRANSFORM_* value
 };
 
-enum class SessionType
+enum class SessionType : std::uint8_t
 {
     Wayland,
     X11,

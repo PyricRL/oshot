@@ -94,7 +94,9 @@ enum class SavingOp;
     {                         \
         auto&& _r = (expr);   \
         if (!_r.ok())         \
+        {                     \
             on_err;           \
+        }                     \
     } while (0)
 
 // shotout to the better c++ server for these helper structs
@@ -162,12 +164,12 @@ public:
     Result(Err<U>&& e) : m_value(std::in_place_index<1>, std::move(e.value))
     {}
 
-    bool     ok() const { return std::holds_alternative<T>(m_value); }
-             operator bool() const { return ok(); }
-    T&       get() { return std::get<T>(m_value); }
-    E&       error() { return std::get<E>(m_value); }
-    const T& get() const { return std::get<T>(m_value); }
-    const E& error() const { return std::get<E>(m_value); }
+    [[nodiscard]] bool ok() const { return std::holds_alternative<T>(m_value); }
+                       operator bool() const { return ok(); }
+    T&                 get() { return std::get<T>(m_value); }
+    E&                 error() { return std::get<E>(m_value); }
+    const T&           get() const { return std::get<T>(m_value); }
+    const E&           error() const { return std::get<E>(m_value); }
 
     template <typename U = T, typename = typename U::value_type>
     typename U::value_type& get_v()
@@ -211,10 +213,10 @@ public:
     Result(Err<U>&& err) : m_ok(false), m_err{ std::move(err.value) }
     {}
 
-    bool     ok() const { return m_ok; }
-    E&       error() { return m_err; }
-    const E& error() const { return m_err; }
-             operator bool() const { return ok(); }
+    [[nodiscard]] bool ok() const { return m_ok; }
+    E&                 error() { return m_err; }
+    const E&           error() const { return m_err; }
+                       operator bool() const { return ok(); }
 
     template <typename U = E, typename = typename U::value_type>
     typename U::value_type& error_v()
@@ -295,12 +297,13 @@ struct rgba_t
     static constexpr rgba_t from_argb(uint32_t v) { return { uint8_t(v >> 16), uint8_t(v >> 8),  uint8_t(v),       uint8_t(v >> 24) }; }
     static constexpr rgba_t from_bgra(uint32_t v) { return { uint8_t(v >> 8),  uint8_t(v >> 16), uint8_t(v >> 24), uint8_t(v) }; }
 
-    constexpr uint32_t to_rgba() const { return uint32_t(r)<<24 | uint32_t(g)<<16 | uint32_t(b)<<8 | a; }
-    constexpr uint32_t to_abgr() const { return uint32_t(a)<<24 | uint32_t(b)<<16 | uint32_t(g)<<8 | r; }
-    constexpr uint32_t to_argb() const { return uint32_t(a)<<24 | uint32_t(r)<<16 | uint32_t(g)<<8 | b; }
-    constexpr uint32_t to_bgra() const { return uint32_t(b)<<24 | uint32_t(g)<<16 | uint32_t(r)<<8 | a; }
+    [[nodiscard]] constexpr uint32_t to_rgba() const { return uint32_t(r)<<24 | uint32_t(g)<<16 | uint32_t(b)<<8 | a; }
+    [[nodiscard]] constexpr uint32_t to_abgr() const { return uint32_t(a)<<24 | uint32_t(b)<<16 | uint32_t(g)<<8 | r; }
+    [[nodiscard]] constexpr uint32_t to_argb() const { return uint32_t(a)<<24 | uint32_t(r)<<16 | uint32_t(g)<<8 | b; }
+    [[nodiscard]] constexpr uint32_t to_bgra() const { return uint32_t(b)<<24 | uint32_t(g)<<16 | uint32_t(r)<<8 | a; }
 
-    constexpr ImVec4 to_imvec4() const;
+    [[nodiscard]] constexpr ImVec4 to_imvec4() const;
+    [[nodiscard]] constexpr operator ImVec4() const;
 
     uint8_t r, g, b, a;
 };
@@ -308,7 +311,7 @@ struct rgba_t
 
 inline rgba_t load_rgba(const uint8_t* p)
 {
-    return rgba_t(p[0], p[1], p[2], p[3]);
+    return { p[0], p[1], p[2], p[3] };
 }
 
 constexpr rgba_t operator""_rgba(unsigned long long v)
@@ -324,6 +327,18 @@ inline void store_rgba(uint8_t* p, const rgba_t& c)
     p[3] = c.a;
 }
 
+namespace Colors
+{
+static constexpr auto WHITE  = 0xFFFFFFFF_rgba;
+static constexpr auto BLACK  = 0x00000000_rgba;
+static constexpr auto RED    = 0xFF0000FF_rgba;
+static constexpr auto GREEN  = 0x00FF00FF_rgba;
+static constexpr auto BLUE   = 0x0000FFFF_rgba;
+static constexpr auto YELLOW = 0xFFFF00FF_rgba;
+static constexpr auto CYAN   = 0x00FFFFFF_rgba;
+}  // namespace Colors
+
+// NOLINTNEXTLINE(performance-enum-size)
 enum class ImageExt
 {
     PNG,
@@ -333,11 +348,20 @@ enum class ImageExt
     COUNT
 };
 
+// NOLINTNEXTLINE(performance-enum-size)
 enum class SavingOp
 {
     kNone,
     Clipboard,
     File
+};
+
+// NOLINTNEXTLINE(performance-enum-size)
+enum class ByteUnit
+{
+    Kibibyte = 1024,
+    Kilobyte = 1000,
+    Byte     = 1,
 };
 
 inline constexpr std::array<std::pair<ImageExt, const char*>, idx(ImageExt::COUNT)> IMAGE_EXTS_STR = {
@@ -349,10 +373,10 @@ inline std::unordered_map<std::string_view, ImageExt> IMAGE_EXTS_ENUM = {
 
 extern bool g_is_systray;  // old g_is_clipboard_server;
 extern int  g_sock;
-extern char g_sock_path[100];
 extern int  g_scr_w, g_scr_h;
 extern bool g_is_nix;
 
+extern std::array<char, 100>                              g_sock_path;
 extern std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> g_imgui_log_sink;
 
 static inline const std::string version_infos = fmt::format(
@@ -376,7 +400,7 @@ std::string replace_str(std::string& str, const std::string_view from, const std
 std::string select_image();
 std::string expand_var(std::string ret);
 std::string col_to_hexstr(const rgba_t& col);
-std::string get_relative_path(const std::string_view relative_path, const std::string_view env, const long long mode);
+std::string get_relative_path(const std::string_view relative_path, const char* env, const long long mode);
 std::string which(const std::string_view command);
 
 bool acquire_tray_lock();
@@ -406,7 +430,7 @@ void maximize_window();
 void extern_glfwTerminate();
 void extern_glfwSwapInterval(int v);
 
-byte_units_t auto_divide_bytes(const double num, const std::uint16_t base, const std::string_view maxprefix = "");
+byte_units_t auto_divide_bytes(const double num, const ByteUnit base, const std::string_view maxprefix = "");
 byte_units_t divide_bytes(const double num, const std::string_view prefix);
 void         fit_to_screen(capture_result_t& img);
 void         rgba_to_grayscale(const uint8_t* rgba, uint8_t* result, int width, int height);

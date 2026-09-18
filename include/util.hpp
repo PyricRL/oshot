@@ -330,7 +330,6 @@ inline void store_rgba(uint8_t* p, const rgba_t& c)
 namespace Colors
 {
 static constexpr auto WHITE  = 0xFFFFFFFF_rgba;
-static constexpr auto BLACK  = 0x00000000_rgba;
 static constexpr auto RED    = 0xFF0000FF_rgba;
 static constexpr auto GREEN  = 0x00FF00FF_rgba;
 static constexpr auto BLUE   = 0x0000FFFF_rgba;

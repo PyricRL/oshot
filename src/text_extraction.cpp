@@ -266,7 +266,7 @@ Result<ocr_result_t> OcrAPI::ExtractTextCapture(const capture_result_t& cap)
     tesseract::PageSegMode psm = choose_psm(proc_w, proc_h);
 
     float scale         = std::min(float(g_scr_w) / float(cap.w), float(g_scr_h) / float(cap.h));
-    int   effective_dpi = get_screen_dpi() * int(scale);
+    int   effective_dpi = int(float(get_screen_dpi()) * scale);
     effective_dpi       = std::clamp(effective_dpi, 150, 300);
 
     m_api->SetPageSegMode(psm);

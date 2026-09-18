@@ -356,7 +356,7 @@ void list_all_plugins(const StateManager& state)
                     continue;
 
                 for (fs::path base_path : TomlAPI(*plugin_tbl).GetValueArrayStr("libraries", {}))
-                    if (fs::exists(base_path.append(".disabled")))
+                    if (fs::exists(base_path += ".disabled"))  // NOLINT
                         return true;
             }
         }

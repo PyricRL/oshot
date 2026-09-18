@@ -218,16 +218,12 @@ std::vector<std::string> split(const std::string_view text, const char delim)
     std::vector<std::string> vec;
 
     size_t start = 0;
-    while (start <= text.size())
+    while (start < text.size())
     {
         const size_t end = text.find(delim, start);
+        vec.emplace_back(text.substr(start, end == text.npos ? text.npos : end - start));
         if (end == text.npos)
-        {
-            vec.emplace_back(text.substr(start));
             break;
-        }
-
-        vec.emplace_back(text.substr(start, end - start));
         start = end + 1;
     }
 

@@ -92,13 +92,13 @@ constexpr rgba_t::operator ImVec4() const
 
 inline rgba_t blend(rgba_t src, rgba_t dst)
 {
-    uint8_t a  = src.a / 255;
-    uint8_t ia = 1 - a;
+    const float a  = float(src.a) / 255.0f;
+    const float ia = 1.0f - a;
 
-    return rgba_t{ uint8_t(src.r * a + dst.r * ia),
-                   uint8_t(src.g * a + dst.g * ia),
-                   uint8_t(src.b * a + dst.b * ia),
-                   uint8_t(src.a + dst.a * ia) };
+    return rgba_t{ uint8_t(float(src.r) * a + float(dst.r) * ia),
+                   uint8_t(float(src.g) * a + float(dst.g) * ia),
+                   uint8_t(float(src.b) * a + float(dst.b) * ia),
+                   uint8_t(float(src.a + dst.a) * ia) };
 }
 
 static bool get_filtered_filenames(const std::string&                                 dir,
@@ -1002,7 +1002,7 @@ void ScreenshotTool::HandleAnnotationInput()
             ImGui::SetNextWindowBgAlpha(0.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, padding_y));
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, Colors::BLACK);
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, 0x00000000_rgba);
 
             ImGui::Begin("##text_ann_input_win",
                          nullptr,
@@ -1709,10 +1709,10 @@ void ScreenshotTool::DrawAboutWindow()
     ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("About", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings))
     {
-        std::span<const char> text_display;
-        const float           window_width  = ImGui::GetWindowSize().x;
-        auto                  centered_text = [&](const std::span<const char> text) {
-            float name_width = ImGui::CalcTextSize(text.data()).x;
+        const char* text_display;
+        const float window_width  = ImGui::GetWindowSize().x;
+        auto        centered_text = [&](const char* text) {
+            float name_width = ImGui::CalcTextSize(text).x;
             ImGui::SetCursorPosX((window_width - name_width) / 2);
             return text;
         };
@@ -1723,22 +1723,22 @@ void ScreenshotTool::DrawAboutWindow()
 
         // Centered labels
         text_display = centered_text("oshot v" VERSION);
-        ImGui::TextUnformatted(text_display.data());
+        ImGui::TextUnformatted(text_display);
         ImGui::Spacing();
 
         text_display = centered_text("Screenshot tool for extracting text on the fly");
-        ImGui::TextUnformatted(text_display.data());
+        ImGui::TextUnformatted(text_display);
         ImGui::Spacing();
 
 #ifdef DISABLE_PLUGINS
         text_display = centered_text("!!! NO PLUGINS SUPPORT !!!");
-        ImGui::TextColored(Colors::RED, "%s", text_display.data());
+        ImGui::TextColored(Colors::RED, "%s", text_display);
         ImGui::Spacing();
 #endif
 
         // More version details
         text_display = "More Details:";
-        if (ImGui::TreeNode(text_display.data()))
+        if (ImGui::TreeNode(text_display))
         {
             ImGui::BeginChild("##scrollable_region", ImVec2(0, 100), false, ImGuiWindowFlags_HorizontalScrollbar);
 
@@ -1818,11 +1818,11 @@ void ScreenshotTool::DrawOcrTools()
 
         if (g_is_nix)
         {
-            constexpr std::span<const char> cmd = "nix build --no-link --print-out-paths nixpkgs#tesseract";
+            constexpr const char* cmd = "nix build --no-link --print-out-paths nixpkgs#tesseract";
             ImGui::TextWrapped(
                 "Run the following command in your terminal, then update the OCR path in the Preferences window:");
-            ImGui::TextColored((0xFFCC33FF_rgba), cmd.data());
-            CreateCopyTextButton(cmd.data(), "Copy command");
+            ImGui::TextColored((0xFFCC33FF_rgba), cmd);
+            CreateCopyTextButton(cmd, "Copy command");
             ImGui::Spacing();
         }
 
@@ -3610,19 +3610,18 @@ void ScreenshotTool::DrawDownloadOCRWindow()
         // Only show button when not already downloading
         if (ImGui::Button("Download", ImVec2(-1, 0)))
         {
-            const std::vector<std::string> cmd{
-                "curl",
-                "-fL",
-                fmt::format("https://raw.githubusercontent.com/{}/main/{}.traineddata",
-                            m_inputs.ocr_download_repo,
-                            model_to_get),
-                "-o",
-                fmt::format("{}/{}.traineddata", m_inputs.ocr_model_downloaded_path, model_to_get)
-            };
+            std::vector<std::string> cmd{ "curl",
+                                          "-fL",
+                                          fmt::format("https://raw.githubusercontent.com/{}/main/{}.traineddata",
+                                                      m_inputs.ocr_download_repo,
+                                                      model_to_get),
+                                          "-o",
+                                          fmt::format(
+                                              "{}/{}.traineddata", m_inputs.ocr_model_downloaded_path, model_to_get) };
 
             m_ocr_download = std::make_shared<ocr_download_t>();
 
-            std::thread([&, dl = m_ocr_download]() mutable {
+            std::thread([cmd = std::move(cmd), dl = m_ocr_download]() mutable {
                 TinyProcessLib::Process proc(
                     cmd,
                     "",
@@ -3967,13 +3966,13 @@ void ScreenshotTool::Cancel()
 
 bool ScreenshotTool::OpenImage(const std::string& path)
 {
-    const Result<capture_result_t>& cap = load_image_rgba(path);
+    Result<capture_result_t> cap = load_image_rgba(path);
     MUST_OK(cap, {
         error("Failed to load image: {}", cap.error_v());
         return false;
     });
 
-    m_screenshot = cap.get();
+    m_screenshot = std::move(cap.get());
     fit_to_screen(m_screenshot);
 
 #if OSHOT_MACOS

@@ -92,8 +92,8 @@ constexpr rgba_t::operator ImVec4() const
 
 inline rgba_t blend(rgba_t src, rgba_t dst)
 {
-    uint a  = src.a / 255;
-    uint ia = 1 - a;
+    uint8_t a  = src.a / 255;
+    uint8_t ia = 1 - a;
 
     return rgba_t{ uint8_t(src.r * a + dst.r * ia),
                    uint8_t(src.g * a + dst.g * ia),

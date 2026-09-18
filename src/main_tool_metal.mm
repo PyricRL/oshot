@@ -96,8 +96,34 @@ int run_main_tool()
         fmt::println(stderr, "Canceled screenshot");
         glfwSetWindowShouldClose(window, GLFW_TRUE);
     });
-    g_ss_tool.SetOnComplete([&](SavingOp op, const capture_result_t& result, ImageExt ext) {
-        MUST_OK(save_image(op, result, ext),
+    g_ss_tool.SetOnComplete([&](SavingOp op, const region_t& region, ImageExt ext) {
+        const NSUInteger bytes_per_row = NSUInteger(region.w) * 4;
+        const NSUInteger buffer_size   = bytes_per_row * NSUInteger(region.h);
+
+        id<MTLBuffer> readback = [device newBufferWithLength:buffer_size options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer>      cb   = [commandQueue commandBuffer];
+        id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+        [blit copyFromTexture:current_frame_texture
+                         sourceSlice:0
+                         sourceLevel:0
+                        sourceOrigin:MTLOriginMake(NSUInteger(region.x), NSUInteger(region.y), 0)
+                          sourceSize:MTLSizeMake(NSUInteger(region.w), NSUInteger(region.h), 1)
+                            toBuffer:readback
+                   destinationOffset:0
+              destinationBytesPerRow:bytes_per_row
+            destinationBytesPerImage:buffer_size];
+        [blit endEncoding];
+        [cb commit];
+        [cb waitUntilCompleted];
+
+        std::vector<unsigned char> pixels(buffer_size);
+        std::memcpy(pixels.data(), readback.contents, buffer_size);
+        for (size_t i = 0; i + 3 < pixels.size(); i += 4)
+            std::swap(pixels[i], pixels[i + 2]);  // BGRA -> RGBA
+
+        capture_result_t res{ .data = std::move(pixels), .w = region.w, .h = region.h };
+        MUST_OK(save_image(op, res, ext),
                 error("Failed to save as {}: {}", g_config->File.image_out_type.first, _r.error_v()));
 
         glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -167,6 +193,7 @@ int run_main_tool()
     layer.device             = device;
     layer.pixelFormat        = MTLPixelFormatBGRA8Unorm;
     layer.displaySyncEnabled = YES;  // vsync
+    layer.framebufferOnly    = NO;   // required so drawable.texture can be used as a blit source below
 
     nswin.contentView.layer      = layer;
     nswin.contentView.wantsLayer = YES;
@@ -235,12 +262,11 @@ int run_main_tool()
                              (__bridge void*)create_metal_texture(device, ICON_TEXT_RGBA, ICON_TEXT_W, ICON_TEXT_H));
 
     // Render loop
-    MTLRenderPassDescriptor* rpd = [MTLRenderPassDescriptor new];
-
+    MTLRenderPassDescriptor* rpd              = [MTLRenderPassDescriptor new];
+    bool                     force_fire_frame = false;
     while (!glfwWindowShouldClose(window) && g_ss_tool.IsActive())
     {
         glfwPollEvents();
-
         if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0)
         {
             ImGui_ImplGlfw_Sleep(10);
@@ -255,6 +281,8 @@ int run_main_tool()
         id<CAMetalDrawable> drawable = [layer nextDrawable];
         if (!drawable)
             continue;
+
+        current_frame_texture = drawable.texture;
 
         // Configure render pass
         rpd.colorAttachments[0].texture     = drawable.texture;
@@ -274,13 +302,30 @@ int run_main_tool()
         id<MTLCommandBuffer>        cb  = [commandQueue commandBuffer];
         id<MTLRenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rpd];
         [enc pushDebugGroup:@"oshot"];
-
         ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), cb, enc);
-
         [enc popDebugGroup];
         [enc endEncoding];
-        [cb presentDrawable:drawable];
-        [cb commit];
+
+        // Run just another frame so that ScreenshotTool::DrawDarkOverlay() and
+        // ScreenshotTool::DrawASelectionBorder() are not baked into the image,
+        // since the on-complete handler blits raw pixels straight off this
+        // frame's drawable texture once it's actually been drawn.
+        if (force_fire_frame)
+        {
+            [cb presentDrawable:drawable];
+            [cb commit];
+            g_ss_tool.FireOnComplete();
+        }
+        else if (g_ss_tool.IsCompleted())
+        {
+            force_fire_frame = true;
+            continue;  // this frame still has the overlay baked in; drop it unpresented
+        }
+        else
+        {
+            [cb presentDrawable:drawable];
+            [cb commit];
+        }
     }
 
     // Cleanup

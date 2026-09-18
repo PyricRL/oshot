@@ -32,12 +32,18 @@
 #  include "imgui/imgui_impl_opengl3.h"
 #  include "screen_capture.hpp"
 #  include "screenshot_tool.hpp"
+#  include "stb_image_write.h"
 #  include "util.hpp"
 #  define GL_SILENCE_DEPRECATION
 #  if defined(IMGUI_IMPL_OPENGL_ES2)
 #    include <GLES2/gl2.h>
 #  endif
+
+// clang-format off
+#  include <GL/glew.h>
+#  include <GL/gl.h>
 #  include <GLFW/glfw3.h>  // Will drag system OpenGL headers
+// clang-format on
 
 #  if OSHOT_WINDOWS
 #    define WIN32_LEAN_AND_MEAN
@@ -126,6 +132,9 @@ static void maximize_window_()
 
 int run_main_tool()
 {
+    static GLuint fbo_id = 0;
+    int           display_w, display_h;
+
     register_window_callbacks(minimize_window_, maximize_window_, glfwTerminate, glfwSwapInterval);
 
     // Setup Screenshot Tool
@@ -136,8 +145,17 @@ int run_main_tool()
         glfwSwapInterval(0);  // Disable vsync
         glfwSetWindowShouldClose(window, GLFW_TRUE);
     });
-    g_ss_tool.SetOnComplete([&](SavingOp op, const capture_result_t& result, ImageExt ext) {
-        MUST_OK(save_image(op, result, ext),
+    g_ss_tool.SetOnComplete([&](SavingOp op, const region_t& region, ImageExt ext) {
+        int fb_w = 0, fb_h = 0;
+        glfwGetFramebufferSize(window, &fb_w, &fb_h);
+        const int gl_y = fb_h - region.y - region.h;  // top-left region -> bottom-left GL origin
+
+        std::vector<unsigned char> pixels(size_t(region.w) * region.h * 4);
+        glReadPixels(region.x, gl_y, region.w, region.h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+        stbi_flip_vertically_on_write(1);
+        capture_result_t res{ .data = std::move(pixels), .w = region.w, .h = region.h };
+        MUST_OK(save_image(op, res, ext),
                 error("Failed to save as {}: {}", g_config->File.image_out_type.first, _r.error_v()));
 
         glfwSwapInterval(0);  // Disable vsync
@@ -211,6 +229,16 @@ int run_main_tool()
     glfwSetDropCallback(window, glfw_drop_callback);
     glfwSwapInterval(1);  // Enable vsync
 
+    glewExperimental = GL_TRUE;  // needed for core profiles on some GLEW builds
+    GLenum glew_err  = glewInit();
+    if (glew_err != GLEW_OK)
+    {
+        error("Failed to initialize GLEW: {}", reinterpret_cast<const char*>(glewGetErrorString(glew_err)));
+        if (!g_is_systray)
+            glfwTerminate();
+        return EXIT_FAILURE;
+    }
+
     g_scr_w = mode->width;
     g_scr_h = mode->height;
 
@@ -238,6 +266,11 @@ int run_main_tool()
         return EXIT_FAILURE;
     });
 
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_id);
+    glGenFramebuffers(1, &fbo_id);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_ss_tool.GetImageTexture()._TexID, 0);
+
+    bool force_fire_frame = false;
     while (!glfwWindowShouldClose(window) && g_ss_tool.IsActive())
     {
         // Poll and handle events (inputs, window resize, etc.)
@@ -264,12 +297,22 @@ int run_main_tool()
 
         // Rendering
         ImGui::Render();
-        int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);  // dark background
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        // Run just another frame so that ScreenshotTool::DrawDarkOverlay() and
+        // ScreenshotTool::DrawASelectionBorder() are not being rendered into
+        // the image because of glReadPixels() reading raw pixels from the screen
+        if (force_fire_frame)
+            g_ss_tool.FireOnComplete();
+        else if (g_ss_tool.IsCompleted())
+        {
+            force_fire_frame = true;
+            continue;
+        }
 
         glfwSwapBuffers(window);
     }
@@ -278,6 +321,8 @@ int run_main_tool()
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &fbo_id);
 
     glfwDestroyWindow(window);
     window = nullptr;

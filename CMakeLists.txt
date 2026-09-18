@@ -90,6 +90,7 @@ find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(GLEW REQUIRED)
 
 if(TARGET glfw::glfw)
     set(GLFW_TARGET glfw::glfw)
@@ -188,7 +189,10 @@ if(WIN32 AND NOT WINDOWS_CMD)
 endif()
 
 if(UNIX AND NOT APPLE)
-    target_link_libraries(${PROJECT_NAME} PRIVATE X11::X11)
+    target_link_libraries(
+        ${PROJECT_NAME}
+        PRIVATE X11::X11 OpenGL::OpenGL GLEW::GLEW
+    )
 endif()
 
 if(APPLE)

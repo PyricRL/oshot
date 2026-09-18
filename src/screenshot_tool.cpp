@@ -36,7 +36,6 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <span>
 #include <string_view>
 #include <thread>
@@ -551,7 +550,7 @@ void ScreenshotTool::RenderOverlay()
             HandleAnnotationInput();
 
         if (g_config->Runtime.instant_copy_save != SavingOp::kNone)
-            m_on_complete(g_config->Runtime.instant_copy_save, GetFinalImage(), g_config->File.image_out_type.second);
+            RequestComplete(g_config->Runtime.instant_copy_save);
     }
 
     ImGui::End();
@@ -638,14 +637,12 @@ void ScreenshotTool::HandleShortcutsInput()
         g_config->Runtime.enable_handles = !g_config->Runtime.enable_handles;
 
     if (ImGui::Shortcut(ImGuiKey_S | ImGuiMod_Ctrl, ImGuiInputFlags_RouteGlobal))
-        if (m_on_complete)
-            m_on_complete(SavingOp::File, GetFinalImage(), g_config->File.image_out_type.second);
+        RequestComplete(SavingOp::File);
 
     if (ImGui::Shortcut(ImGuiKey_C | ImGuiMod_Ctrl | (g_config->File.ctrl_c_copy_img ? 0 : ImGuiMod_Shift),
                         ImGuiInputFlags_RouteGlobal) &&
         !ui_blocks_selection())
-        if (m_on_complete)
-            m_on_complete(SavingOp::Clipboard, GetFinalImage(), g_config->File.image_out_type.second);
+        RequestComplete(SavingOp::Clipboard);
 }
 
 void ScreenshotTool::HandleSelectionInput(selection_info_t& sel)
@@ -1403,6 +1400,11 @@ void ScreenshotTool::UpdateCursor(const selection_info_t& sel)
 
 void ScreenshotTool::DrawDarkOverlay()
 {
+    // Don't render if user requested a save
+    // of the selection current frame
+    if (IsCompleted())
+        return;
+
     ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 
     const float sel_x = m_main_sel.selection.get_x();
@@ -1457,6 +1459,11 @@ void ScreenshotTool::DrawASelectionBorder(selection_info_t& sel,
                                           const float       sel_w,
                                           const float       sel_h)
 {
+    // Don't render if user requested a save
+    // of the selection current frame
+    if (IsCompleted())
+        return;
+
     ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 
     // Draw selection border
@@ -1615,12 +1622,10 @@ void ScreenshotTool::DrawMenuItems()
             ImGui::Separator();
 
             if (ImGui::MenuItem("Save Image", "CTRL+S"))
-                if (m_on_complete)
-                    m_on_complete(SavingOp::File, GetFinalImage(), g_config->File.image_out_type.second);
+                RequestComplete(SavingOp::File);
 
             if (ImGui::MenuItem("Copy Image", g_config->File.ctrl_c_copy_img ? "CTRL+C" : "CTRL+SHIFT+C"))
-                if (m_on_complete)
-                    m_on_complete(SavingOp::Clipboard, GetFinalImage(), g_config->File.image_out_type.second);
+                RequestComplete(SavingOp::Clipboard);
 
             ImGui::Separator();
 
@@ -2135,15 +2140,13 @@ void ScreenshotTool::DrawAnnotationToolbar()
         ImGui::SameLine();
     }
 
-    if (ImGui::ImageButton("##CopyImageButton", m_tool_textures[idx(ToolType::CopyImage)], ImVec2(24, 24)) &&
-        m_on_complete)
-        m_on_complete(SavingOp::Clipboard, GetFinalImage(), g_config->File.image_out_type.second);
+    if (ImGui::ImageButton("##CopyImageButton", m_tool_textures[idx(ToolType::CopyImage)], ImVec2(24, 24)))
+        RequestComplete(SavingOp::Clipboard);
 
     ImGui::SameLine();
 
-    if (ImGui::ImageButton("##SaveImageButton", m_tool_textures[idx(ToolType::SaveImage)], ImVec2(24, 24)) &&
-        m_on_complete)
-        m_on_complete(SavingOp::File, GetFinalImage(), g_config->File.image_out_type.second);
+    if (ImGui::ImageButton("##SaveImageButton", m_tool_textures[idx(ToolType::SaveImage)], ImVec2(24, 24)))
+        RequestComplete(SavingOp::File);
 
     ImGui::SameLine();
     ImGui::Separator();
@@ -4045,309 +4048,6 @@ capture_result_t ScreenshotTool::GetFinalImage(bool is_text_tools)
             const size_t dst_row_start = (size_t(y) * dst_width + start_x) * 4;
 
             std::memcpy(dst.data() + dst_row_start, src.data() + src_row_start, bytes_to_copy);
-        }
-    }
-
-    if (is_text_tools && !g_config->File.render_anns)
-        return result;
-
-    // Render annotations to the final image
-    const float offset_x = m_main_sel.selection.get_x();
-    const float offset_y = m_main_sel.selection.get_y();
-
-    auto set_pixel = [&](int x, int y, rgba_t color) {
-        if (x < 0 || x >= result.w || y < 0 || y >= result.h)
-            return;
-
-        size_t   idx = (size_t(y) * result.w + x) * 4;
-        uint8_t* p   = &result.data[idx];
-
-        if (color.a == 0xFF)
-        {
-            store_rgba(p, color);
-            return;
-        }
-
-        rgba_t dst = load_rgba(p);
-        store_rgba(p, blend(color, dst));
-    };
-
-    auto draw_line = [&](int x0, int y0, int x1, int y1, rgba_t color, float thickness) {
-        // Bresenham's line algorithm with thickness
-        int dx     = std::abs(x1 - x0);
-        int dy     = std::abs(y1 - y0);
-        int sx     = x0 < x1 ? 1 : -1;
-        int sy     = y0 < y1 ? 1 : -1;
-        int err    = dx - dy;
-        int radius = int(thickness / 2.0f);
-
-        while (true)
-        {
-            // Draw thick point
-            for (int oy = -radius; oy <= radius; ++oy)
-                for (int ox = -radius; ox <= radius; ++ox)
-                    if (ox * ox + oy * oy <= radius * radius)
-                        set_pixel(x0 + ox, y0 + oy, color);
-
-            if (x0 == x1 && y0 == y1)
-                break;
-
-            int e2 = 2 * err;
-            if (e2 > -dy)
-            {
-                err -= dy;
-                x0 += sx;
-            }
-            if (e2 < dx)
-            {
-                err += dx;
-                y0 += sy;
-            }
-        }
-    };
-
-    for (const annotation_t& ann : m_annotations)
-    {
-        int x1 = int(ann.start.x - offset_x);
-        int y1 = int(ann.start.y - offset_y);
-        int x2 = int(ann.end.x - offset_x);
-        int y2 = int(ann.end.y - offset_y);
-        int cx = x1;
-        int cy = y1;
-
-        int radius = int(std::sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)));
-
-        // Previous switch case has been moved to an if/elseif long branch for keeping away duplicated code because of the counter bubble being
-        // a combination of a circle and text inside it.
-        // Please stfu, the compiler will make ts into a switch case automatically. Stop fighting the machine
-        if (ann.type == ToolType::Text || ann.type == ToolType::CounterBubble)
-        {
-            const std::string& label = ann.type == ToolType::CounterBubble ? fmt::to_string(ann.count) : ann.text;
-
-            if (label.empty())
-                continue;
-
-            float font_size;
-            if (ann.type == ToolType::CounterBubble)
-                font_size = std::max(8.0f, float(radius) * 1.4f);  // ~70 % of diameter so the digit has breathing room
-            else
-                font_size = ann.thickness > 8.0f ? ann.thickness : ImGui::GetFontSize();
-
-            ImFont* font = CacheAndGetFont(m_inputs.resolved_ann_font_path, font_size);
-            if (!font || !font->OwnerAtlas)
-                continue;
-
-            ImFontBaked* baked = font->GetFontBaked(font_size);
-            if (!baked)
-                continue;
-
-            ImTextureData* tex = font->OwnerAtlas->TexData;
-            // from obsolete GetTexDataAsFormat()
-            if (!font->OwnerAtlas->TexIsBuilt || tex == NULL || tex->Pixels == NULL)
-            {
-                ImFontAtlasBuildMain(font->OwnerAtlas);
-                tex = font->OwnerAtlas->TexData;
-            }
-            unsigned char* pixels  = tex->Pixels;
-            int            atlas_w = tex->Width, atlas_h = tex->Height;
-            if (!pixels || atlas_w == 0 || atlas_h == 0)
-                continue;
-
-            const char* p   = label.c_str();
-            const char* end = p + label.size();
-
-            float cursor_x;
-            float cursor_y;
-            if (ann.type == ToolType::CounterBubble)
-            {
-                // Measure total advance to compute the centered origin
-                float total_w = 0.0f;
-                float total_h = font_size;  // approximate; refined below
-                {
-                    const char* pp  = label.c_str();
-                    const char* end = p + label.size();
-                    while (pp < end)
-                    {
-                        unsigned int cp = 0;
-                        pp += ImTextCharFromUtf8(&cp, pp, end);
-                        if (cp == 0)
-                            break;
-                        const ImFontGlyph* g = baked->FindGlyph(ImWchar(cp));
-                        if (g)
-                        {
-                            total_w += g->AdvanceX;
-                            total_h = std::max(total_h, g->Y1 - g->Y0);
-                        }
-                    }
-                }
-
-                cursor_x = float(cx) - total_w * 0.5f;
-                cursor_y = float(cy) - total_h * 0.5f;
-            }
-            else
-            {
-                cursor_x = x1;
-                cursor_y = y2;
-            }
-
-            while (p < end)
-            {
-                unsigned int codepoint = 0;
-                p += ImTextCharFromUtf8(&codepoint, p, end);
-                if (codepoint == 0)
-                    break;
-
-                const ImFontGlyph* glyph = baked->FindGlyph(ImWchar(codepoint));
-                if (!glyph)
-                    continue;
-
-                const int dst_x0 = int(cursor_x + glyph->X0);
-                const int dst_y0 = int(cursor_y + glyph->Y0);
-                const int dst_x1 = int(cursor_x + glyph->X1);
-                const int dst_y1 = int(cursor_y + glyph->Y1);
-
-                const int src_x0 = int(glyph->U0 * atlas_w);
-                const int src_y0 = int(glyph->V0 * atlas_h);
-                const int src_x1 = int(glyph->U1 * atlas_w);
-                const int src_y1 = int(glyph->V1 * atlas_h);
-
-                const int dst_gw = dst_x1 - dst_x0;
-                const int dst_gh = dst_y1 - dst_y0;
-                const int src_gw = src_x1 - src_x0;
-                const int src_gh = src_y1 - src_y0;
-
-                if (dst_gw <= 0 || dst_gh <= 0 || src_gw <= 0 || src_gh <= 0)
-                {
-                    cursor_x += glyph->AdvanceX;
-                    continue;
-                }
-
-                const uint32_t* font_pixels = reinterpret_cast<const uint32_t*>(pixels);
-                rgba_t          col         = ann.color;
-                for (int dy = 0; dy < dst_gh; ++dy)
-                {
-                    const int src_ay = src_y0 + dy * src_gh / dst_gh;
-                    if (src_ay < 0 || src_ay >= atlas_h)
-                        continue;
-
-                    for (int dx = 0; dx < dst_gw; ++dx)
-                    {
-                        const int src_ax = src_x0 + dx * src_gw / dst_gw;
-                        if (src_ax < 0 || src_ax >= atlas_w)
-                            continue;
-
-                        const uint32_t atlas_px    = font_pixels[src_ay * atlas_w + src_ax];
-                        const uint8_t  glyph_alpha = uint8_t((atlas_px >> 24) & 0xFF);
-                        if (glyph_alpha == 0)
-                            continue;
-
-                        uint8_t src_a = col.a * glyph_alpha / 255u;
-                        rgba_t  pixel(col.r, col.g, col.b, src_a);
-                        set_pixel(dst_x0 + dx, dst_y0 + dy, pixel);
-                    }
-                }
-
-                cursor_x += glyph->AdvanceX;
-            }
-        }
-
-        if (ann.type == ToolType::CounterBubble || ann.type == ToolType::Circle)
-        {
-            // Midpoint circle algorithm
-            int x       = radius;
-            int y       = 0;
-            int err     = 0;
-            int thick_r = int(ann.thickness / 2.0f);
-
-            while (x >= y)
-            {
-                for (int oy = -thick_r; oy <= thick_r; ++oy)
-                    for (int ox = -thick_r; ox <= thick_r; ++ox)
-                        if (ox * ox + oy * oy <= thick_r * thick_r)
-                        {
-                            set_pixel(cx + x + ox, cy + y + oy, ann.color);
-                            set_pixel(cx + y + ox, cy + x + oy, ann.color);
-                            set_pixel(cx - y + ox, cy + x + oy, ann.color);
-                            set_pixel(cx - x + ox, cy + y + oy, ann.color);
-                            set_pixel(cx - x + ox, cy - y + oy, ann.color);
-                            set_pixel(cx - y + ox, cy - x + oy, ann.color);
-                            set_pixel(cx + y + ox, cy - x + oy, ann.color);
-                            set_pixel(cx + x + ox, cy - y + oy, ann.color);
-                        }
-
-                y += 1;
-                err += 1 + 2 * y;
-                if (2 * (err - x) + 1 > 0)
-                {
-                    x -= 1;
-                    err += 1 - 2 * x;
-                }
-            }
-        }
-
-        else if (ann.type == ToolType::Line)
-        {
-            draw_line(x1, y1, x2, y2, ann.color, ann.thickness);
-        }
-
-        else if (ann.type == ToolType::Arrow)
-        {
-            draw_line(x1, y1, x2, y2, ann.color, ann.thickness);
-            // Draw arrowhead
-            float dx  = x2 - x1;
-            float dy  = y2 - y1;
-            float len = std::sqrt(dx * dx + dy * dy);
-            if (len > 0.1f)
-            {
-                dx /= len;
-                dy /= len;
-                float arrow_size = 15.0f + ann.thickness;
-                int   ax1        = int(x2 - arrow_size * dx + arrow_size * 0.5f * dy);
-                int   ay1        = int(y2 - arrow_size * dy - arrow_size * 0.5f * dx);
-                int   ax2        = int(x2 - arrow_size * dx - arrow_size * 0.5f * dy);
-                int   ay2        = int(y2 - arrow_size * dy + arrow_size * 0.5f * dx);
-                draw_line(x2, y2, ax1, ay1, ann.color, ann.thickness);
-                draw_line(x2, y2, ax2, ay2, ann.color, ann.thickness);
-            }
-        }
-
-        else if (ann.type == ToolType::Rectangle)
-        {
-            draw_line(x1, y1, x2, y1, ann.color, ann.thickness);
-            draw_line(x2, y1, x2, y2, ann.color, ann.thickness);
-            draw_line(x2, y2, x1, y2, ann.color, ann.thickness);
-            draw_line(x1, y2, x1, y1, ann.color, ann.thickness);
-        }
-
-        else if (ann.type == ToolType::RectangleFilled)
-        {
-            int rx1 = std::min(x1, x2);
-            int rx2 = std::max(x1, x2);
-            int ry1 = std::min(y1, y2);
-            int ry2 = std::max(y1, y2);
-            for (int fy = ry1; fy <= ry2; ++fy)
-                for (int fx = rx1; fx <= rx2; ++fx)
-                    set_pixel(fx, fy, ann.color);
-        }
-
-        else if (ann.type == ToolType::CircleFilled)
-        {
-            for (int fy = cy - radius; fy <= cy + radius; ++fy)
-                for (int fx = cx - radius; fx <= cx + radius; ++fx)
-                    if ((fx - cx) * (fx - cx) + (fy - cy) * (fy - cy) <= radius * radius)
-                        set_pixel(fx, fy, ann.color);
-        }
-
-        else if (ann.type == ToolType::Pencil)
-        {
-            for (size_t i = 1; i < ann.points.size(); ++i)
-            {
-                int px1 = int(ann.points[i - 1].x - offset_x);
-                int py1 = int(ann.points[i - 1].y - offset_y);
-                int px2 = int(ann.points[i].x - offset_x);
-                int py2 = int(ann.points[i].y - offset_y);
-                draw_line(px1, py1, px2, py2, ann.color, ann.thickness);
-            }
         }
     }
 

@@ -41,6 +41,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "config.hpp"
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
 #include "screen_capture.hpp"
@@ -330,7 +331,8 @@ public:
         m_tool_textures[idx(type)]._TexID = static_cast<ImTextureID>(size_t(tex));
     }
 
-    auto& GetImGuiIDTexts() { return m_imgui_id_texts; }
+    auto&       GetImGuiIDTexts() { return m_imgui_id_texts; }
+    const auto& GetImageTexture() const { return m_texture_id; }
 
     void SetOnImageReload(std::function<void(const capture_result_t&)> fn) { m_on_image_reload = std::move(fn); }
 
@@ -368,9 +370,19 @@ public:
         return ctx.Has(e);
     }
 
-    void SetOnComplete(const std::function<void(SavingOp, const capture_result_t&, ImageExt)>& cb)
+    void SetOnComplete(const auto& cb) { m_on_complete = std::move(cb); }
+
+    // Marks that the user asked to save/copy; the actual work is deferred
+    // until FireOnComplete() is called after the frame has been rendered.
+    void RequestComplete(SavingOp op) { m_completed_op = op; }
+
+    bool IsCompleted() const { return m_completed_op != SavingOp::kNone; }
+
+    void FireOnComplete()
     {
-        m_on_complete = std::move(cb);
+        if (m_on_complete)
+            m_on_complete(m_completed_op, GetActiveRegion(), g_config->File.image_out_type.second);
+        m_completed_op = SavingOp::kNone;
     }
 
     void SetOnCancel(const std::function<void()>& cb) { m_on_cancel = std::move(cb); }
@@ -452,8 +464,9 @@ private:
     std::map<std::pair<std::string, float>, font_cache_t> m_font_cache;
     std::function<void()>                                 m_on_cancel;
     std::function<void(const capture_result_t&)>          m_on_image_reload;
+    SavingOp                                              m_completed_op = SavingOp::kNone;
 
-    std::function<void(SavingOp, const capture_result_t&, ImageExt)> m_on_complete;
+    std::function<void(SavingOp, const region_t&, ImageExt)> m_on_complete;
 
     std::deque<monitor_t>                          m_wayland_monitors;
     SessionType                                    m_session;

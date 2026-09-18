@@ -189,10 +189,11 @@ if(WIN32 AND NOT WINDOWS_CMD)
 endif()
 
 if(UNIX AND NOT APPLE)
-    target_link_libraries(
-        ${PROJECT_NAME}
-        PRIVATE X11::X11 OpenGL::OpenGL GLEW::GLEW
-    )
+    target_link_libraries(${PROJECT_NAME} PRIVATE X11::X11)
+endif()
+
+if(NOT APPLE)
+    target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::OpenGL GLEW::GLEW)
 endif()
 
 if(APPLE)

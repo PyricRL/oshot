@@ -5,5 +5,7 @@ Checks: >
   modernize-*,
   clang-analyzer-*,
   -modernize-use-trailing-return-type
+  -bugprone-reserved-identifier
+  -modernize-avoid-c-style-cast
 WarningsAsErrors: ''
 HeaderFilterRegex: '.*'

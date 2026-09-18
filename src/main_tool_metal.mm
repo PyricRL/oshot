@@ -89,7 +89,9 @@ static id<MTLTexture> create_metal_texture(id<MTLDevice> device, const uint8_t* 
 int run_main_tool()
 {
     register_window_callbacks(minimize_window_, maximize_window_, glfwTerminate, glfwSwapInterval);
-    id<MTLDevice> device;
+    id<MTLDevice>       device                = nil;
+    id<MTLCommandQueue> commandQueue          = nil;
+    id<MTLTexture>      current_frame_texture = nil;
 
     // vsync is controlled via the CAMetalLayer's displaySyncEnabled property instead.
     g_ss_tool.SetOnCancel([&]() {
@@ -185,7 +187,15 @@ int run_main_tool()
         glfwTerminate();
         return EXIT_FAILURE;
     }
-    id<MTLCommandQueue> commandQueue = [device newCommandQueue];
+
+    commandQueue = [device newCommandQueue];
+    if (!commandQueue)
+    {
+        error("Failed to create Metal command queue");
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return EXIT_FAILURE;
+    }
 
     // Attach a CAMetalLayer to the GLFW window's content view
     NSWindow*     nswin      = glfwGetCocoaWindow(window);
